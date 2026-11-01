@@ -347,9 +347,9 @@ def shape_line_xml(stroke, width, dash=None, start_arrow=None, end_arrow=None):
 
 
 def slide_background_xml(slide):
-    background = slide.get("background")
-    if not background:
-        return ""
+    # Always emit a background: without one PowerPoint assumes white but Keynote
+    # renders black, hiding dark text.
+    background = slide.get("background") or "FFFFFF"
     return (
         "<p:bg><p:bgPr>"
         f'<a:solidFill><a:srgbClr val="{hex_color(background, "FFFFFF")}"/></a:solidFill>'
