@@ -12,6 +12,11 @@ Source image: {{SOURCE_IMAGE}}
 
 You own only this Page dir. Do not edit deck_manifest.json, page_jobs.json, notes_manifest.json, final outputs, the original input, or any other page directory.
 
+Claude Code runtime (overrides Codex-specific wording in the references):
+- View images with the Read tool on the file path (source.png, text_hints.png, preview.png, split_assets_contact.png, generated assets). This replaces `view_image`.
+- There is no built-in image generator. The page's image_backend is the CLI contract: every clean-base, asset-sheet, or generated image uses `editppt image generate/edit` with an explicit `--out` inside this Page dir, then `editppt image import`. Ignore `builtin-imagegen` / `image_gen.imagegen` instructions.
+- If `editppt image` reports no usable credentials, do not substitute crops or approximate shapes for foreground visuals; write validation.json with `passed: false` and the cause so the parent can ask the user for an API key.
+
 Read references by task, before acting on their rules. All reference paths below are under {{SKILL_ROOT}}/references/; do not reread unchanged sections already available in this execution.
 - Start with page_request.json and page-decision-tree.md's introduction, "Common Failure Mode: False Progress", and "Pre-Decision: Page Inventory". Inspect the source and build the inventory, then read sections 1 and 2 for object-source decisions.
 - Before native reconstruction, read section 3.1 for text; read sections 3.2-3.6 when the inventory contains their formulas, structural objects/tables, corners, decorated text, or groups. Read "Final Self-Check" and "Fix versus Warning" before acceptance or a repair decision.
