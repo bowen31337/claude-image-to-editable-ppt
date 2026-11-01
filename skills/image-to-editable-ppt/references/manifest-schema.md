@@ -304,6 +304,7 @@ Text-size fitting:
 - Keep default fitting enabled for first drafts. Set `fit_text: false` only when the page author has manually calibrated the box and font size.
 - `text_boxes[].box_px` should describe the source text bounds plus modest padding. Do not use an unrelated card, chart, or table cell group as the text box, because the fitter infers size from the supplied box. Badge-centered text is the explicit shared-box exception in `page-decision-tree.md` section 3.6.
 - Optional tuning fields are `min_font_size`, `max_font_size`, `text_fit_safety`, and `line_height`.
+- `line_height` is the source line pitch divided by the font size, measured from consecutive baselines (e.g. 1.6 for loose body text). When set on a text box (or on an item in `paragraphs`), it is written as PowerPoint paragraph line spacing and also used by the fitter. Use it to keep a multi-line paragraph in **one** text box rather than splitting it into a box per line; per-line boxes break reflow when the user edits the text.
 
 Text alignment:
 

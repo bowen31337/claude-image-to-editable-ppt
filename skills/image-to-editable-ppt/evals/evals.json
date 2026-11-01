@@ -1,8 +1,58 @@
 {
   "skill_name": "image-to-editable-ppt",
   "evals": [
-    {"id": 1, "name": "single-status-report", "prompt": "I only have a screenshot of our weekly status slide (inputs/status-report.png). Can you turn it into an editable PowerPoint so I can update the table and dates? Save the .pptx into outputs/.", "expected_output": "1-slide pptx: native text, native tables for both tables, the 3 header icons and timeline markers as separate vector/image assets, no full-slide raster", "files": ["inputs/status-report.png"]},
-    {"id": 2, "name": "two-image-deck", "prompt": "convert these two slide images into one editable pptx deck, keep the order: inputs/01-market-snapshot.png then inputs/02-investment-platform.png. put the result in outputs/", "expected_output": "2-slide pptx in order; KPI icons separated; chart rebuilt from native shapes/paths with editable labels; text editable", "files": ["inputs/01-market-snapshot.png", "inputs/02-investment-platform.png"]},
-    {"id": 3, "name": "pdf-infographic", "prompt": "Here's a PDF export of a medical MDT infographic (inputs/mdt-kidney-cancer.pdf) where none of the text is selectable. Rebuild it as an editable PowerPoint and save it to outputs/.", "expected_output": "1-slide pptx from PDF page 1; all readable text native; illustrations/icons as separate assets", "files": ["inputs/mdt-kidney-cancer.pdf"]}
+    {
+      "id": 1,
+      "name": "single-status-report",
+      "prompt": "I only have a screenshot of our weekly status slide (inputs/status-report.png). Can you turn it into an editable PowerPoint so I can update the table and dates? Save the .pptx into outputs/.",
+      "expected_output": "1-slide pptx: native text, native tables for both tables, the 3 header icons and timeline markers as separate vector/image assets, no full-slide raster",
+      "files": [
+        "inputs/status-report.png"
+      ],
+      "assertions": [
+        "PPTX delivered in outputs/ and opens as a valid package",
+        "Slide count matches input page count and order",
+        "No full-slide screenshot left under editable text",
+        "At least 90% of key strings are native editable text",
+        "Non-text visuals are separate movable objects",
+        "Icons embedded as SVG vectors (PowerPoint Convert-to-Shape capable)",
+        "Tables rebuilt as native PowerPoint tables"
+      ]
+    },
+    {
+      "id": 2,
+      "name": "two-image-deck",
+      "prompt": "convert these two slide images into one editable pptx deck, keep the order: inputs/01-market-snapshot.png then inputs/02-investment-platform.png. put the result in outputs/",
+      "expected_output": "2-slide pptx in order; KPI icons separated; chart rebuilt from native shapes/paths with editable labels; text editable",
+      "files": [
+        "inputs/01-market-snapshot.png",
+        "inputs/02-investment-platform.png"
+      ],
+      "assertions": [
+        "PPTX delivered in outputs/ and opens as a valid package",
+        "Slide count matches input page count and order",
+        "No full-slide screenshot left under editable text",
+        "At least 90% of key strings are native editable text",
+        "Non-text visuals are separate movable objects",
+        "Icons embedded as SVG vectors (PowerPoint Convert-to-Shape capable)"
+      ]
+    },
+    {
+      "id": 3,
+      "name": "pdf-infographic",
+      "prompt": "Here's a PDF export of a medical MDT infographic (inputs/mdt-kidney-cancer.pdf) where none of the text is selectable. Rebuild it as an editable PowerPoint and save it to outputs/.",
+      "expected_output": "1-slide pptx from PDF page 1; all readable text native; illustrations/icons as separate assets",
+      "files": [
+        "inputs/mdt-kidney-cancer.pdf"
+      ],
+      "assertions": [
+        "PPTX delivered in outputs/ and opens as a valid package",
+        "Slide count matches input page count and order",
+        "No full-slide screenshot left under editable text",
+        "At least 90% of key strings are native editable text",
+        "Non-text visuals are separate movable objects",
+        "Icons embedded as SVG vectors (PowerPoint Convert-to-Shape capable)"
+      ]
+    }
   ]
 }

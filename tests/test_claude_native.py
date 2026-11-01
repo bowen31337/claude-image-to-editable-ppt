@@ -243,6 +243,15 @@ class InpaintAndPhotoCommandTest(unittest.TestCase):
             self.assertNotEqual(0, bad.returncode)
 
 
+class LineSpacingTest(unittest.TestCase):
+    def test_line_height_is_emitted_as_paragraph_spacing(self):
+        from build_pptx_from_manifest import text_box_xml
+        xml = text_box_xml(2, {"text": "a\nb", "left": 0, "top": 0, "width": 2, "height": 1, "font_size": 12, "line_height": 1.8})
+        self.assertEqual(2, xml.count('<a:spcPct val="150000"/>'))  # 1.8 pitch / 1.2 single = 150%
+        plain = text_box_xml(2, {"text": "a", "left": 0, "top": 0, "width": 2, "height": 1, "font_size": 12})
+        self.assertNotIn("lnSpc", plain)
+
+
 class ClaudeNativeBackendContractTest(unittest.TestCase):
     def test_prepare_records_claude_native_contract(self):
         with tempfile.TemporaryDirectory() as tmp:

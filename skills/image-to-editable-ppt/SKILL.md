@@ -77,7 +77,7 @@ Read the prepare examples in `references/cli-helper.md` and the run/page file de
 editppt prepare <input...> --image-backend claude-native
 ```
 
-By default this creates `output/image-to-editable-ppt/<job-id>/` under the current directory. Afterward there must be `deck_manifest.json`, `page_jobs.json`, `notes_manifest.json`, and each page must have `source.png` plus `page_request.json`.
+Keep the default `--out-root`: it creates the working run directory `output/image-to-editable-ppt/<job-id>/` under the current directory. Don't point it at the folder where the user wants the result; that folder should receive only the final deck (Phase 4). Afterward there must be `deck_manifest.json`, `page_jobs.json`, `notes_manifest.json`, and each page must have `source.png` plus `page_request.json`.
 
 Prepare also writes per-page text hints (`text_hints.json`/`text_hints.png`). If `doctor` or prepare reports no PaddleOCR token (offline fallback), ask the user once before dispatching any page: a free token from https://aistudio.baidu.com/account/accessToken, stored with `editppt config --paddle-ocr-token <token>`, makes hints content-aware (it reads the text, not just measures where it is) and noticeably improves text fidelity; `editppt run hints <run>` then regenerates the current run's hints in place. The free personal quota is more than enough for this skill. Wait for their choice; if they decline, continue with offline hints and don't ask again.
 
@@ -149,7 +149,7 @@ editppt run finalize <run>
 
 Finalize rebuilds the deck from each recorded `pages/page_NNN/manifest.json` in page order, copies `.pptx` speaker notes unchanged, and validates the result: valid package, slide count = input page count, correct PDF/PPTX page mapping, complete media relationships, all manifest assets present with matching hashes, speaker-note hashes match, and no "full-slide source raster with text overlaid" pattern (that is a fake editable slide and is never acceptable).
 
-Your final reply reports the final PPTX path (`final/<origin>_edited.pptx`), the validation result, and any per-page warnings or failed pages with their concrete causes.
+If the user named an output location or filename, copy `final/<origin>_edited.pptx` there; otherwise leave it in `final/`. Your final reply reports the delivered PPTX path, the validation result, and any per-page warnings or failed pages with their concrete causes. Mention the run directory only as where the intermediate files live.
 
 ## State principles
 

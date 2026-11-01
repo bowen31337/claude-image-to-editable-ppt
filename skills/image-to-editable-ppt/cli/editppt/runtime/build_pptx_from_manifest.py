@@ -395,8 +395,14 @@ def text_box_xml(idx, item):
             paragraph_runs = [{"text": paragraph}]
         else:
             paragraph_runs = paragraph.get("runs", [{"text": paragraph.get("text", "")}])
+        # line_height is line pitch / font size, the same field the overflow
+        # fitter uses. PowerPoint's 100% spacing is ~1.2x font size, so convert.
+        spacing = paragraph.get("line_height") if isinstance(paragraph, dict) else None
+        spacing = spacing if spacing not in (None, "") else item.get("line_height")
+        spacing_xml = f'<a:lnSpc><a:spcPct val="{int(round(float(spacing) / 1.2 * 100000))}"/></a:lnSpc>' if spacing not in (None, "") else ""
+        ppr = f'<a:pPr algn="{align}">{spacing_xml}</a:pPr>' if spacing_xml else f'<a:pPr algn="{align}"/>'
         return (
-            f'<a:p><a:pPr algn="{align}"/>'
+            f'<a:p>{ppr}'
             + "".join(run_xml(run) for run in paragraph_runs)
             + f'<a:endParaRPr lang="zh-CN" sz="{font_size}"/></a:p>'
         )
