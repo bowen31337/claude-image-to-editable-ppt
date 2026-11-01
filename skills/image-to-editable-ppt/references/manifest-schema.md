@@ -11,6 +11,7 @@ This document describes the responsibilities, owners, and current field contract
 - `pages/page_NNN/validation.json`
 - `pages/page_NNN/manifest.json` (including Native tables)
 - `pages/page_NNN/imagegen-jobs.json`
+- Claude-native assets (`claude-native` backend)
 - Asset sheet regions and split reports
 - `notes_manifest.json`
 
@@ -341,10 +342,10 @@ Text alignment:
 
 - `path`: the image path as referenced in `images[]`.
 - `source`: the file the asset was produced from (for separated assets and clean bases this is typically `source.png` or the recorded asset sheet; for formulas the `.tex` file). The referenced file must exist.
-- `source_type`: exactly one of `asset-sheet-separated`, `imagegen`, `latex-rendered-formula`, `user-provided`, `user-approved-rasterization`. No other value passes validation.
+- `source_type`: exactly one of `asset-sheet-separated`, `imagegen`, `latex-rendered-formula`, `user-provided`, `user-approved-rasterization`, or — under the `claude-native` backend — `claude-svg`, `source-photo-region`, `local-inpaint-clean-base`. No other value passes validation. The three native types carry extra required fields; see "Claude-native assets".
 - `provenance_note`: a non-empty explanation of how the asset was produced.
 
-New `visual_inventory` entries should declare `role` (`foreground`, `background`, `structure`, or `formula`) and may supply `object_type` (such as `icon` or `photo`). For `role: foreground`, supply `path` matching an image and its `asset_provenance`, plus `source_type` matching that provenance (`asset-sheet-separated` or `imagegen`). Descriptions and provenance notes explain the work; they are not keyword-based proof of the source method. Legacy entries remain supported; prefer these fields for unambiguous classification.
+New `visual_inventory` entries should declare `role` (`foreground`, `background`, `structure`, or `formula`) and may supply `object_type` (such as `icon` or `photo`). For `role: foreground`, supply `path` matching an image and its `asset_provenance`, plus `source_type` matching that provenance (`asset-sheet-separated`, `imagegen`, `claude-svg`, or `source-photo-region`). Descriptions and provenance notes explain the work; they are not keyword-based proof of the source method. Legacy entries remain supported; prefer these fields for unambiguous classification.
 
 `roundRect` shapes must record `source_corner_radius_px`; they may also record `corner_reason`. If the source is a straight-corner rectangle, use `rect`.
 
@@ -423,9 +424,33 @@ Each imported job records at least the selected output and the backend that actu
 }
 ```
 
-`backend` is the actual producer: `builtin-imagegen`, `codex-oauth`, or `openai-compatible-api`; `unknown` is reserved for legacy page directories that have no `image_backend` contract. `editppt image import` requires an explicit producer, rejects files that are not readable images, and checks `backend`/`fallback_reason` against the page contract. `fallback_reason` is `null` when the preferred backend succeeded or the run selected a CLI contract directly; when a built-in contract enters its CLI fallback, it records the matching event from `image_backend.fallback_policy.on`.
+`backend` is the actual producer: `builtin-imagegen`, `codex-oauth`, or `openai-compatible-api`, or for jobs written by the Claude-native commands `claude-svg`, `local-inpaint`, or `source-photo-region`; `unknown` is reserved for legacy page directories that have no `image_backend` contract. `editppt image import` requires an explicit producer, rejects files that are not readable images, and checks `backend`/`fallback_reason` against the page contract. `fallback_reason` is `null` when the preferred backend succeeded or the run selected a CLI contract directly; when a built-in contract enters its CLI fallback, it records the matching event from `image_backend.fallback_policy.on`.
 
 State and provenance record rules are described in the State Principles section of `SKILL.md` and in the asset processing examples in `cli-helper.md`.
+
+## Claude-native assets (`claude-native` backend)
+
+Written by `editppt prepare --image-backend claude-native` for agents that can see images but cannot generate them (Claude Code). The `image_backend` contract has `backend_id: "claude-native"`, `requires_openai_api_key: false`, an `object_sources` map, and an `optional_upgrade` note: when `editppt doctor --check-api` reports a ready backend, `editppt image generate/edit` outputs may still be imported with `--backend codex-oauth|openai-compatible-api`. Which object uses which source is decided in `page-decision-tree.md` section 2.4.
+
+Each native command records a job in `imagegen-jobs.json` and writes a manifest fragment (`assets/<id>.fragment.json`) whose `images`, `asset_provenance`, and `visual_inventory` entries are merged into `manifest.json` unchanged.
+
+`claude-svg` (from `editppt image svg`):
+
+- `images[].path` is the rendered PNG fallback; `images[].svg_path` is the traced SVG. The builder embeds both (PNG blip plus the Office `svgBlip` extension), so PowerPoint renders the vector and offers "Convert to Shape". Validation hash-checks `ppt/media/svgN.svg` against `svg_path`.
+- `asset_provenance[].source` must be that same `.svg` file; `source_box_px` records the traced source region.
+- The SVG must be self-contained vector geometry: SVG namespace, a `viewBox`, no `<image>`, `<foreignObject>`, `<script>`, or external `href`; `<text>` only with `--allow-identity-text` for logo wordmarks.
+- The job records `fidelity` (`ink_iou`, `mean_color_delta_on_shared_ink`) from comparing the trace with the source crop.
+
+`source-photo-region` (from `editppt image photo-region`):
+
+- `asset_provenance[].object_type` must be one of `photo`, `screenshot`, `video-cover`, `map`, `textured-image-block`, `complex-illustration`.
+- The region must cover less than 90% of the source page.
+- `inpainted_boxes_px` lists areas cleaned before extraction. Any native text box or table overlapping the region by 20% or more of its own area must be at least 70% covered by these boxes; otherwise the original text stays baked under the editable copy and validation fails.
+
+`local-inpaint-clean-base` (from `editppt image inpaint`):
+
+- `source` is `source.png`; `inpainted_boxes_px` must be non-empty (a clean base that removes nothing is a copy of the source).
+- The same coverage rule as photo regions applies to every text box or table drawn over the clean base's `box_px`.
 
 ## Asset sheet regions and split reports
 

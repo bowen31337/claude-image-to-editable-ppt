@@ -34,7 +34,11 @@ editppt                         - top-level CLI for setup, run orchestration, im
 |   |-- generate                - create a new image from a text prompt
 |   |-- edit                    - edit a source image for clean bases or source-faithful asset sheets
 |   |-- import                  - copy a selected image into the page dir and record provenance
-|   `-- process-sheet           - split a transparent or chroma-key asset sheet into assets
+|   |-- process-sheet           - split a transparent or chroma-key asset sheet into assets
+|   |-- zoom                    - claude-native: magnified source crop with coordinate grid and colours
+|   |-- svg                     - claude-native: validate/render an SVG trace and emit its fragment
+|   |-- inpaint                 - claude-native: clean base by local inpainting of rebuilt regions
+|   `-- photo-region            - claude-native: extract a rectangular photo-like object
 `-- formula                     - render formula assets from agent-transcribed LaTeX
     `-- render-latex            - render LaTeX into SVG/PNG/PDF plus a manifest fragment
 ```
@@ -85,6 +89,8 @@ uv tool install --force --editable <skill-root>/cli
 python3 -m pip install --user -e <skill-root>/cli
 ```
 
+The Claude-native commands need `resvg-py` and `opencv-python-headless`, which are declared in `cli/pyproject.toml` and installed by the commands above (no system libraries required).
+
 `<skill-root>` is the `image-to-editable-ppt` directory that contains `SKILL.md`. On Windows, use the same directory's `cli` subdirectory path.
 
 After the CLI is available, run local runtime checks:
@@ -111,9 +117,10 @@ editppt config --paddle-ocr-token "<token>"
 editppt prepare input.png
 editppt prepare input.pdf
 editppt prepare input.png --image-backend builtin-imagegen
+editppt prepare input.png --image-backend claude-native
 ```
 
-Purpose: normalize a single image, multiple images, a PDF, or an image-based PPTX into a run directory and generate `deck_manifest.json`, `page_jobs.json`, `notes_manifest.json`, plus per-page `pages/page_NNN/source.png`, `page_request.json`, and text hints. `--image-backend` records the requested run/page contract; selection policy lives in `SKILL.md` subsection "Image Backend Selection".
+Purpose: normalize a single image, multiple images, a PDF, or an image-based PPTX into a run directory and generate `deck_manifest.json`, `page_jobs.json`, `notes_manifest.json`, plus per-page `pages/page_NNN/source.png`, `page_request.json`, and text hints. `--image-backend` records the requested run/page contract; selection policy lives in `SKILL.md` subsection "Image backend in Claude Code".
 
 When a PaddleOCR token is configured, `prepare` may submit the input pages to PaddleOCR for content-aware text hints. In a sandboxed or approval-gated environment, request network approval up front for this command instead of accepting a DNS/sandbox failure followed by lower-quality `builtin-ink` fallback; see `SKILL.md` Phase 1 for the approval-rejection policy.
 
@@ -267,6 +274,34 @@ When `--job-id` is present, the default chroma image, alpha image, and split rep
 `--regions` selects whole-object region splitting; omit it for legacy connected-component splitting. `--skip-chroma` requires genuine transparency; `--force-chroma` permits replacing the Alpha output but never re-keys a transparent source. Region and report fields are defined in `manifest-schema.md`, "Asset sheet regions and split reports".
 
 For opaque sheets, the asset sheet key color is determined by the generation prompt; `process-sheet` samples the key color from the image edge. Key-color selection and when to regenerate a sheet with a different key color are defined in `page-decision-tree.md` section 2.2.
+
+## Claude-Native Asset Commands
+
+For runs prepared with `--image-backend claude-native`. Which object uses which command is decided in `page-decision-tree.md` section 2.4; field contracts are in `manifest-schema.md`, "Claude-native assets". Every command writes inside the page dir, records `imagegen-jobs.json`, prints a JSON summary, and (except `zoom`) writes `assets/<id>.fragment.json`.
+
+```bash
+editppt image zoom pages/page_001 --box 412,96,64,64
+```
+
+Purpose: write a magnified crop with a grid labelled in box-local source pixels, and print `svg_viewBox`, `dominant_colors`, and `background_estimate`. Options: `--size` (long edge, default 640), `--grid` (step in px), `--out`.
+
+```bash
+editppt image svg pages/page_001 --svg assets/icon_lock.svg --box 412,96,64,64 --object-type icon
+```
+
+Purpose: validate a self-contained SVG trace, render its PNG fallback (`assets/icon_lock.png`, 4× density by default via `--scale`), write `assets/icon_lock.compare.png` (source next to the trace), and print `fidelity` (`ink_iou`, colour delta). Options: `--id`, `--alt`, `--z-index` (default 30), `--allow-identity-text` (logo wordmarks only), `--fragment`.
+
+```bash
+editppt image inpaint pages/page_001 --boxes-from-hints --boxes "820,410,96,96;940,410,96,96" --out assets/clean_base.png
+```
+
+Purpose: remove the listed boxes from `source.png` with OpenCV inpainting and save a clean base (`--region x,y,w,h` crops it to part of the page) plus a `.compare.png`. Options: `--pad` (default 4 px), `--radius`, `--z-index` (default 0), `--id`, `--fragment`.
+
+```bash
+editppt image photo-region pages/page_001 --box 880,180,560,420 --id team_photo --object-type photo --clean-boxes "900,540,300,40"
+```
+
+Purpose: extract a rectangular photo-like region (`--object-type` is one of `photo`, `screenshot`, `video-cover`, `map`, `textured-image-block`, `complex-illustration`), inpainting `--clean-boxes` first. Options: `--out`, `--alt`, `--z-index` (default 20), `--fragment`.
 
 ## Formula Commands
 

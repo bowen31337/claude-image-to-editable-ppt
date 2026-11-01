@@ -13,15 +13,15 @@ Source image: {{SOURCE_IMAGE}}
 You own only this Page dir. Do not edit deck_manifest.json, page_jobs.json, notes_manifest.json, final outputs, the original input, or any other page directory.
 
 Claude Code runtime (overrides Codex-specific wording in the references):
-- View images with the Read tool on the file path (source.png, text_hints.png, preview.png, split_assets_contact.png, generated assets). This replaces `view_image`.
-- There is no built-in image generator. The page's image_backend is the CLI contract: every clean-base, asset-sheet, or generated image uses `editppt image generate/edit` with an explicit `--out` inside this Page dir, then `editppt image import`. Ignore `builtin-imagegen` / `image_gen.imagegen` instructions.
-- If `editppt image` reports no usable credentials, do not substitute crops or approximate shapes for foreground visuals; write validation.json with `passed: false` and the cause so the parent can ask the user for an API key.
+- View images with the Read tool on the file path (source.png, text_hints.png, zoom/compare images, preview.png, split_assets_contact.png). This replaces `view_image`.
+- You cannot generate bitmaps. When page_request.json's image_backend is `claude-native`, every non-text visual object comes from page-decision-tree.md section 2.4: trace vector-like objects as SVG (`editppt image zoom` then `editppt image svg`), extract photo-like objects with `editppt image photo-region`, and build complex clean bases with `editppt image inpaint`. Ignore `builtin-imagegen` / `image_gen.imagegen` instructions.
+- Do not draw foreground objects with native shapes or Pillow, and do not crop icons; if an object fits no 2.4 source, write validation.json with `passed: false` and the cause.
 
 Read references by task, before acting on their rules. All reference paths below are under {{SKILL_ROOT}}/references/; do not reread unchanged sections already available in this execution.
-- Start with page_request.json and page-decision-tree.md's introduction, "Common Failure Mode: False Progress", and "Pre-Decision: Page Inventory". Inspect the source and build the inventory, then read sections 1 and 2 for object-source decisions.
+- Start with page_request.json and page-decision-tree.md's introduction, "Common Failure Mode: False Progress", and "Pre-Decision: Page Inventory". Inspect the source and build the inventory, then read sections 1 and 2 for object-source decisions (for `claude-native`, section 2.4 replaces 2.1-2.3).
 - Before native reconstruction, read section 3.1 for text; read sections 3.2-3.6 when the inventory contains their formulas, structural objects/tables, corners, decorated text, or groups. Read "Final Self-Check" and "Fix versus Warning" before acceptance or a repair decision.
 - Read manifest-schema.md's page_request.json and pages/page_NNN/manifest.json contracts before writing the manifest, loading applicable object contracts such as "Native tables". Before image jobs read the image_backend and imagegen-jobs.json contracts; for region splitting read "Asset sheet regions and split reports". Before returning read the validation.json and page_result.json contracts. Deck-state and notes contracts are outside your ownership.
-- Use cli-helper.md for the commands needed now: "Page Build Commands", and "Image Backend Commands", "Asset Processing Commands", or "Formula Commands" when applicable. Do not load unrelated install or orchestration instructions.
+- Use cli-helper.md for the commands needed now: "Page Build Commands", and "Image Backend Commands", "Asset Processing Commands", "Claude-Native Asset Commands", or "Formula Commands" when applicable. Do not load unrelated install or orchestration instructions.
 
 Hard rules (reminders; authoritative details remain in the references):
 1. Separate foreground visuals through image editing; backend fallback never permits source crops or approximate substitutes — page-decision-tree.md section 2.

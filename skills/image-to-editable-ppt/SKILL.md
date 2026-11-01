@@ -1,6 +1,6 @@
 ---
 name: image-to-editable-ppt
-description: Rebuild slide images, screenshots, scanned/image-based PPT or PPTX files, and PDF decks into object-level editable PowerPoint (.pptx) — real text boxes, native shapes, native tables, and separated image assets — preserving page order and speaker notes. Use this whenever the user wants to "make this slide editable", convert a slide screenshot/PNG/JPG/PDF/flattened PPTX into a PPT they can edit, recover text from an image-only deck, or reconstruct an infographic as PowerPoint objects, even if they just say "turn this image into a PPT" or "I can't edit the text in this deck". Not for authoring new presentations from an outline, article, or idea.
+description: Rebuild slide images, screenshots, scanned/image-based PPT or PPTX files, and PDF decks into object-level editable PowerPoint (.pptx) — real text boxes, native shapes, native tables, and icons/illustrations re-traced as SVG — preserving page order and speaker notes. Runs fully inside Claude Code with no image-generation API. Use this whenever the user wants to "make this slide editable", convert a slide screenshot/PNG/JPG/PDF/flattened PPTX into a PPT they can edit, recover text from an image-only deck, or reconstruct an infographic as PowerPoint objects, even if they just say "turn this image into a PPT" or "I can't edit the text in this deck". Not for authoring new presentations from an outline, article, or idea.
 ---
 # Image to Editable PPT (Claude Code port)
 
@@ -23,14 +23,14 @@ The upstream skill targets Codex. These are the substitutions that make it work 
 
 | Upstream (Codex) concept | In Claude Code |
 | --- | --- |
-| Built-in `image_gen.imagegen` tool | **Not available.** Claude cannot generate or edit bitmaps. Every image job goes through `editppt image generate/edit` (the CLI backend). Never pass `--image-backend builtin-imagegen`; let `prepare` write the default `editppt-image-cli` contract. Sections about `builtin-imagegen` in the references do not apply. |
-| CLI backend order "Codex OAuth → OpenAI-compatible API" | Unchanged. If `~/.codex/auth.json` exists the CLI uses it; otherwise it needs an OpenAI-compatible API key in `~/.editppt/config.yaml` or `OPENAI_API_KEY`. |
-| `view_image` | `Read` the image file path. Look at `source.png`, `text_hints.png`, `preview.png`, and `split_assets_contact.png` this way. |
+| Built-in `image_gen.imagegen` + image-model asset sheets | **Replaced by the `claude-native` backend.** Claude can see but not generate bitmaps, so it traces icons/illustrations as SVG, keeps photos as rectangular source regions, and inpaints clean bases locally (`references/page-decision-tree.md` section 2.4). Always `prepare` with `--image-backend claude-native`; never `builtin-imagegen`. |
+| CLI image API (`editppt image generate/edit`) | Optional upgrade only, used when `editppt doctor --check-api` reports a ready backend and an object fits no native source. Never required. |
+| `view_image` | `Read` the image file path (`source.png`, `text_hints.png`, zoom and `.compare.png` images, `preview.png`, `split_assets_contact.png`). |
 | Spawn a page worker / subagent | `Agent` tool, `subagent_type: "general-purpose"`, `run_in_background: true`, `name: "ppt-<page_id>"` (e.g. `ppt-page_003`). |
 | Worker id for `--agent-id` | The same name you gave the agent (`ppt-page_003`); `main` for single-page local mode. |
 | Wait for workers | Background agents notify you when they finish. Don't poll in a loop. |
 | Send a repair back to the worker | `SendMessage` to the worker's name, so it keeps its context. |
-| Sandbox / network approval | Claude Code permission prompts. External calls are `editppt prepare`, `editppt run hints`, and `editppt image generate/edit`. |
+| Sandbox / network approval | Claude Code permission prompts. The only external call in a claude-native run is PaddleOCR (`editppt prepare` / `editppt run hints`, when a token is configured); `editppt image generate/edit` also calls out if the optional upgrade is used. |
 
 ## Entry Contract
 
@@ -40,32 +40,32 @@ These orchestrator-level rules are stated once here.
 - **State only through the CLI.** Start with `editppt prepare <input...>`. After that, advance every state transition only through `editppt` commands; never hand-write run/page state JSON. This keeps the run deterministic and resumable.
 - **Who rebuilds pages.** A run with exactly one page is rebuilt by you in local mode after `editppt run dispatch --local` claims it. Multi-page runs are rebuilt by background page workers — one per page. Don't rebuild multi-page artifacts yourself: each page burns a lot of context (images, manifests, repair loops), and keeping it in separate workers is what keeps your orchestration context usable and lets pages run in parallel.
 - **Artifact ownership.** You don't write `manifest.json`, `page.pptx`, `preview.png`, `split_assets_contact.png`, `validation.json`, or `page_result.json` except in single-page local mode after the `--local` claim. Local mode follows the same page prompt, references, outputs, and `run record` validation as a worker.
-- **Image backend.** See "Image backend in Claude Code" below. If no backend can produce a compliant asset, the page fails validation rather than substituting approximate shapes or source crops (`references/page-decision-tree.md` section 2).
-- **Authorized external calls.** A request to convert slides into editable PPT authorizes the OCR and image-API calls needed for that conversion, unless the user asks for local-only processing or marks the input confidential. Send only task-local page images, prompts, masks, and reference images — never unrelated files or credentials. Third-party endpoints are allowed only when the user configured or named them.
-- **Autonomy.** Run routine reconstruction, configured fallbacks, and page-local repairs without confirmation gates. Stop for the user only for something only they can supply (an API key, an OCR token decision, a missing input). Report concrete blockers instead of asking the user to debug.
+- **Image backend.** See "Image backend in Claude Code" below. If no permitted source can reproduce an object, the page fails validation rather than substituting approximate shapes or icon crops (`references/page-decision-tree.md` section 2).
+- **Authorized external calls.** A request to convert slides into editable PPT authorizes the OCR calls (and, if configured, image-API calls) needed for that conversion, unless the user asks for local-only processing or marks the input confidential. Send only task-local page images, prompts, masks, and reference images — never unrelated files or credentials. Third-party endpoints are allowed only when the user configured or named them.
+- **Autonomy.** Run routine reconstruction, configured fallbacks, and page-local repairs without confirmation gates. Stop for the user only for something only they can supply (an OCR token decision, a missing input). Report concrete blockers instead of asking the user to debug.
 - **Object decisions** follow `references/page-decision-tree.md`; deterministic validation is a structure gate and never waives an object-source decision.
 - `manifest.json` is the authoritative page build source; `run record` validates `page.pptx` against it, and `run finalize` rebuilds the deck from recorded manifests.
 
 ### Credentials hygiene
 
-Secrets (OpenAI-compatible API key, PaddleOCR token) end up in the transcript if the user pastes them into chat. Suggest the user run the config command themselves with the `!` prefix so the value goes straight to the CLI, e.g.:
+Secrets (PaddleOCR token, optional image-API key) end up in the transcript if the user pastes them into chat. Suggest the user run the config command themselves with the `!` prefix so the value goes straight to the CLI, e.g.:
 
 ```
-! editppt config --api-key sk-... --base-url https://api.openai.com/v1
 ! editppt config --paddle-ocr-token <token>
+! editppt config --api-key sk-... --base-url https://api.openai.com/v1   # optional image-API upgrade
 ```
 
 If they paste a key into chat anyway, store it with `editppt config` and never echo it back; the CLI masks it in output. Never write keys into the project, the run directory, or the skill directory.
 
 ### Image backend in Claude Code
 
-Claude has no built-in image generation, so the run uses the CLI backend contract that `editppt prepare` writes by default. Before prepare:
+Claude has vision but no image generation, so every run uses the `claude-native` backend: `editppt prepare <input...> --image-backend claude-native`. Page reconstructors then pick each object's source per `references/page-decision-tree.md` section 2.4:
 
-1. Run `editppt doctor --check-api`.
-2. If it reports Codex OAuth ready, or an API key is configured, continue.
-3. If both are missing, ask the user once for an OpenAI-compatible image API (base URL, model if non-default, key), using the `!` pattern above. Explain why: image generation/editing is how backgrounds get cleaned and icons/illustrations get separated into movable assets; without it, any page containing such visuals cannot pass validation. Text-and-shape-only pages may still succeed, so if the user declines, continue and let affected pages fail with a clear reason rather than faking assets.
+- **Icons, logos, badges, hand-drawn marks, flat illustrations** — Claude traces them as SVG (`editppt image zoom`, then `editppt image svg`). The PPTX embeds the real SVG, so in PowerPoint the user can recolor it or use **Convert to Shape** to edit its individual paths. That makes these objects *more* editable than the upstream skill's bitmap assets.
+- **Photos, screenshots, textured blocks** — kept as rectangular source regions (`editppt image photo-region`). Vector tracing would turn them into cartoons.
+- **Complex backgrounds behind rebuilt text** — cleaned by local inpainting (`editppt image inpaint`).
 
-Image jobs within a page run serially (`references/cli-helper.md` "Image Backend Commands").
+Don't ask the user for an image API. If `editppt doctor --check-api` happens to show a ready backend (Codex login or a configured key), workers may use `editppt image generate/edit` as an optional upgrade for objects that fit no native source well, such as a photographic cutout on a busy background. Asset commands within a page run serially.
 
 ## Workflow
 
@@ -74,7 +74,7 @@ Image jobs within a page run serially (`references/cli-helper.md` "Image Backend
 Read the prepare examples in `references/cli-helper.md` and the run/page file descriptions in `references/manifest-schema.md`.
 
 ```bash
-editppt prepare <input...>
+editppt prepare <input...> --image-backend claude-native
 ```
 
 By default this creates `output/image-to-editable-ppt/<job-id>/` under the current directory. Afterward there must be `deck_manifest.json`, `page_jobs.json`, `notes_manifest.json`, and each page must have `source.png` plus `page_request.json`.
@@ -104,9 +104,10 @@ editppt run next <run> --json
    ```
    You are a page reconstructor for the image-to-editable-ppt skill (Claude Code port).
    Read <abs-run-dir>/pages/<page_id>/worker-prompt.md and follow it exactly.
-   Claude Code notes: view images with the Read tool; there is no built-in image
-   generator, so all image jobs use `editppt image generate/edit`; run shell
-   commands with Bash. Do not touch files outside your page directory.
+   Claude Code notes: view images with the Read tool; you cannot generate
+   bitmaps, so non-text visuals come from page-decision-tree.md section 2.4
+   (SVG traces, photo regions, local inpaint); run shell commands with Bash.
+   Do not touch files outside your page directory.
    ```
 3. Only after the spawn succeeded: `editppt run dispatch <run> --page <page_id> --agent-id ppt-<page_id> --prompt-file <abs-run-dir>/pages/<page_id>/worker-prompt.md`
 
@@ -114,7 +115,7 @@ Spawn all suggested pages of a batch in a single message so they run concurrentl
 
 **`stage=wait`**. Dispatched pages are active leases, not idle slots. Wait for completion notifications. Don't stop, reset, or replace a worker because it is slow or quiet — complex pages legitimately take 10+ minutes.
 
-**`stage=configure_backend`**. Follow the returned `next_command`, but substitute the CLI backend (`editppt-image-cli`), never `builtin-imagegen`.
+**`stage=configure_backend`**. Run `editppt run backend <run> --mode claude-native` rather than the suggested `builtin-imagegen`/CLI contract.
 
 ### Phase 3: Record
 
@@ -172,9 +173,9 @@ Continue only from file facts and `editppt run next`.
 Mention these briefly on a first run, not every time:
 
 - It is slow and token-heavy: a complex single page can take 10+ minutes; a multi-page deck runs pages in parallel but costs proportionally more.
-- Output is a close reconstruction, not a pixel-perfect replica; complex photos, illustrations, and textures become movable image assets rather than internally editable objects.
+- Output is a close reconstruction, not a pixel-perfect replica. Icons and flat illustrations are re-traced as SVG, so they are faithful but not byte-identical to the source. Photos stay as movable images. Photographic objects with irregular outlines keep their rectangular background unless an image API is configured.
 - Approving `editppt` once for the session (or allowing `Bash(editppt:*)` in settings) avoids being prompted on every page step, since background workers run many CLI calls.
 
 ## Upstream
 
-Ported from [ningzimu/image-to-editable-ppt-skill](https://github.com/ningzimu/image-to-editable-ppt-skill) (MIT, see `LICENSE`), upstream commit `b7be494`. `cli/`, `references/`, and `scripts/` are vendored unchanged; `prompts/page-worker.md` adds a short Claude Code runtime block, and this `SKILL.md` is rewritten for Claude Code; to update, re-copy those directories from upstream and reinstall the CLI with `uv tool install --force --editable <skill-root>/cli`.
+Ported from [ningzimu/image-to-editable-ppt-skill](https://github.com/ningzimu/image-to-editable-ppt-skill) (MIT, see `LICENSE`), upstream commit `b7be494`. This SKILL.md is rewritten for Claude Code. The port adds the `claude-native` backend: `cli/editppt/runtime/claude_native_assets.py`, SVG embedding in the builder, new provenance guards in the validator, and the matching sections in the references and the worker prompt. Everything else is vendored upstream. When updating from upstream, merge rather than overwrite, and run the test suite in the repository's `tests/` directory.

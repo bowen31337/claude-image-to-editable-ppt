@@ -15,7 +15,7 @@ Contents:
 - Common failure mode: false progress
 - Pre-decision: page inventory
 - 1. Background recognition and repair
-- 2. Foreground asset separation
+- 2. Foreground asset separation (2.4: Claude-native object sources)
 - 3. PPT native element reconstruction
 - Final self-check
 - Fix versus warning
@@ -80,6 +80,8 @@ The clean base target is the same background with the to-be-rebuilt foreground r
 
 If the occlusion is small, prefer local completion or a small patch rather than letting the image backend reimagine the whole background.
 
+Under the `claude-native` backend there is no image model; clean bases come from `editppt image inpaint` (section 2.4).
+
 ### 1.4 Dashboard Is Not Background by Default
 
 A dashboard is not background, and it is not a single image block to screenshot wholesale. Dashboard titles, numbers, tables, axes, legends, ordinary chart elements, metric cards, filters, and labels are decomposed in step 3 into native text and structural objects.
@@ -111,6 +113,8 @@ Every non-text foreground visual object must be separated through the image-edit
 
 Do not approximate these with native primitives, even when one appears to be made of circles, lines, rectangles, or ellipses — the criterion is not "can it be drawn" but whether it is a foreground visual asset rather than a layout primitive. Do not substitute direct source-image snippets for source-faithful separation. Do not hand-draw or assemble foreground visual objects with local Python/Pillow/SVG/HTML/CSS code; deterministic tools are only for normalization, recording, background removal, splitting, formula rendering, building, validation, and QA.
 
+Under the `claude-native` backend, section 2.4 replaces the asset-sheet workflow of 2.1-2.3: an agent-authored SVG *trace* made with `editppt image svg` is the separation path, and the prohibition above still applies to everything else (Pillow/HTML drawing, native-primitive stand-ins, and SVGs that redraw rather than trace).
+
 There is no fallback path. If asset-sheet separation cannot produce a compliant asset, the page is blocked until the asset workflow is fixed or the user explicitly changes the requirements for that exact object. Do not downgrade the missing separation to a warning; do not record, finalize, or deliver the fallback.
 
 ### 2.2 Asset Sheet Prompt Principles
@@ -139,6 +143,34 @@ After a sheet is generated and split, reconcile it against `visual_inventory`:
 - Missing objects, wrong symbols, missing strokes, severe deformation, background attachment, text contamination, or synonymous substitution must be regenerated or fixed before use.
 
 What may ship as a recorded warning after compliant separation is defined in "Fix versus Warning" at the end of this file.
+
+### 2.4 Claude-Native Object Sources
+
+Applies when `page_request.json.image_backend.backend_id` is `claude-native`: the reconstructor can see the page but cannot generate bitmaps. Each non-text visual object gets exactly one of these sources, chosen by what the object *is*:
+
+| Object | Source | Command |
+| --- | --- | --- |
+| Icons, pictograms, symbols, logo-like marks, badges, stickers, stamps, hand-drawn arrows/marks/underlines, complex arrows, flat or line illustrations, decorative objects with flat fills or simple gradients | Vector trace | `editppt image svg` → `claude-svg` |
+| Photos, screenshots, video covers, map imagery, textured image blocks, painterly or photoreal illustrations that a vector trace would visibly degrade | Rectangular source region | `editppt image photo-region` → `source-photo-region` |
+| Complex backgrounds (1.3) with text/objects that will be rebuilt on top | Local inpaint | `editppt image inpaint` → `local-inpaint-clean-base` |
+
+Why the split: vector tracing gives the best result where the source is itself vector-like — it stays crisp at any size, and PowerPoint can convert it to editable shapes. Photographic content cannot be traced without turning it into a cartoon, so it keeps its original pixels. The validator therefore accepts `source-photo-region` only for photo-like object types, never for icons. Converting a photo into SVG blobs, or cropping an icon instead of tracing it, is an object-source violation.
+
+If an image backend is also configured (`optional_upgrade` in the contract) and an object fits neither native path well — a photographic cutout on a busy background, for example — the asset-sheet workflow of 2.1-2.3 may be used for that object instead.
+
+**Tracing method.** Trace one object per SVG so each stays independently movable. Background bases of icon groups that are plain circles or rounded squares may instead be native shapes (3.3), with the glyph traced on top.
+
+1. Pick a tight `box_px` around the object with 2-4 px of margin, and run `editppt image zoom <page_dir> --box x,y,w,h`. Read the zoom image: its grid labels are box-local source pixels, so writing the SVG with the reported `viewBox="0 0 w h"` makes the grid numbers exactly the SVG coordinates. Use the reported `dominant_colors` hex values verbatim; don't guess colors by eye.
+2. Write the SVG with the fewest primitives that reproduce the shape: `rect` (with `rx`), `circle`, `ellipse`, `line`, `polyline`, and `path` with as few nodes as the shape needs (Bézier curves for curves, not dense point sampling). Line icons use `stroke` with the measured width and matching `stroke-linecap`/`stroke-linejoin`. Counters and holes use `fill-rule="evenodd"` or white-over-fill only when the source background behind the hole is that exact color.
+3. Run `editppt image svg <page_dir> --svg assets/<id>.svg --box x,y,w,h --object-type <type>`. Read the `.compare.png` it writes, and check `fidelity.ink_iou`.
+4. Iterate on what the comparison shows: wrong proportions, missing strokes, wrong corner radii, or wrong colors. Aim for `ink_iou` ≥ 0.8 on simple icons; detailed illustrations may land lower and still be faithful. Stop when the comparison matches in shape, color, and identity, or after about three refinements. Remaining small differences ship as warnings (see "Fix versus Warning").
+5. Merge the fragment's `images`, `asset_provenance`, and `visual_inventory` into `manifest.json`.
+
+Never trace ordinary text into the SVG (it stays native text, 3.1). Never substitute a different, "cleaner", or generic symbol for the source object; a trace reproduces the source's identity, it doesn't redesign it.
+
+**Inpaint clean bases.** List the boxes of everything that will be rebuilt on top — text lines (`--boxes-from-hints` adds every `text_hints.json` line) plus separated foreground objects — and run `editppt image inpaint`. Read its `.compare.png`. Inpainting works well for text on smooth or gently textured regions; on large or structured regions it smears. If it smears, shrink the boxes to the actual ink, split the job into smaller regions, or treat the region as native structure (1.1) instead. Never solve smearing by leaving the text baked in: the validator rejects native text drawn over un-inpainted source pixels.
+
+**Photo regions.** Use the object's own rectangular bounds. If rebuilt text overlaps the photo, pass those text boxes as `--clean-boxes` so they are inpainted out of the extracted region.
 
 ## 3. PPT Native Element Reconstruction
 
@@ -295,6 +327,7 @@ May ship as recorded warnings with the current PPT — but only after the requir
 
 - Minor line-width, antialiasing, proportion, shadow, or detail differences in separated assets, including small edge fringes or isolated remnants that do not affect object completeness or use.
 - Minor visual drift in non-critical decorations.
+- `claude-svg` traces with small proportion, stroke-width, or corner differences after the iteration in 2.4, as long as the object's identity, colors, and structure match the source.
 - Recorded low-risk font differences.
 - A formula whose LaTeX rendering is blocked by missing local TeX tooling, with the LaTeX source, error, and required repair recorded per 3.2.
 
