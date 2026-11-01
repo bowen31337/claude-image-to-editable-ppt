@@ -306,6 +306,26 @@ class MergeFragmentsTest(unittest.TestCase):
             self.assertTrue(report["passed"], json.dumps(report["page_contract_violations"])[:2000])
 
 
+class RapidOcrHintsTest(unittest.TestCase):
+    def test_rapidocr_reads_real_text_into_hints(self):
+        try:
+            import rapidocr  # noqa: F401
+        except ImportError:
+            self.skipTest("rapidocr not installed")
+        from PIL import ImageFont
+        import rapid_text_hints
+        with tempfile.TemporaryDirectory() as tmp:
+            page = Path(tmp)
+            image = Image.new("RGB", (1200, 400), "white")
+            font = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 64) if Path("/System/Library/Fonts/Helvetica.ttc").exists() else ImageFont.load_default()
+            ImageDraw.Draw(image).text((80, 140), "Quarterly Revenue 4280", font=font, fill="black")
+            image.save(page / "source.png")
+            hints = rapid_text_hints.page_hints(page)
+            self.assertEqual("rapidocr", hints["backend"])
+            self.assertIn("4280", " ".join(line["text"] for line in hints["lines"]))
+            self.assertTrue(all(len(line["box_px"]) == 4 for line in hints["lines"]))
+
+
 class ClaudeNativeBackendContractTest(unittest.TestCase):
     def test_prepare_records_claude_native_contract(self):
         with tempfile.TemporaryDirectory() as tmp:

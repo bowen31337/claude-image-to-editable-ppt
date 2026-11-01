@@ -219,7 +219,7 @@ def collect_status(check_api=False):
             "selection": "codex-oauth" if codex_ready else ("openai-compatible-api" if api_ready else "missing"),
         },
         "text_hints": {
-            "selection": "paddleocr-vl" if values.get("PADDLE_OCR_TOKEN") else "builtin-ink",
+            "selection": "paddleocr-vl" if values.get("PADDLE_OCR_TOKEN") else ("rapidocr" if _rapidocr_available() else "builtin-ink"),
             "paddle_token": "set" if values.get("PADDLE_OCR_TOKEN") else "unset",
             "apply_url": PADDLE_TOKEN_APPLY_URL,
             "configure_command": "editppt config --paddle-ocr-token <token>",
@@ -277,7 +277,12 @@ def doctor(args):
         "paddle approval rejection: ask the user to authorize OCR and explain that it corrects "
         "text boxes, font sizes, and size groups so reconstructed PPT text sizing stays stable."
     )
-    if hints["paddle_token"] == "unset":
+    if hints["paddle_token"] == "unset" and hints["selection"] == "rapidocr":
+        print(
+            "text hints: local RapidOCR reads text on-device (no token, no upload). A PaddleOCR-VL token "
+            "is optional; don't ask the user for one unless they want cloud layout analysis."
+        )
+    elif hints["paddle_token"] == "unset":
         print(
             "text hints: ASK THE USER once — a free PaddleOCR token makes text hints content-aware "
             "(recognized text + cleaner blocks, noticeably better text fidelity). The free personal "
@@ -299,6 +304,15 @@ def doctor(args):
             print("CLI fallback image backend check: Codex OAuth and OPENAI_API_KEY are both missing")
     print(f"next: {status['next']}")
     return 0 if status["ok"] else 1
+
+
+def _rapidocr_available():
+    try:
+        import onnxruntime  # noqa: F401
+        import rapidocr  # noqa: F401
+    except ImportError:
+        return False
+    return True
 
 
 def main():

@@ -128,7 +128,15 @@ def main() -> int:
     token = paddle_token()
     results: dict[Path, dict] = {}
     backend = "builtin-ink"
-    if not token:
+    import rapid_text_hints
+    local_ocr = rapid_text_hints.available()
+    if not token and local_ocr:
+        print(
+            "text-hints: no PaddleOCR token configured; using local RapidOCR (reads text on-device, "
+            "no upload). A PaddleOCR-VL token is optional and only adds cloud layout analysis.",
+            file=sys.stderr,
+        )
+    elif not token:
         print(
             "text-hints: no PaddleOCR token configured; falling back to the built-in offline "
             "detector (geometry only — it measures where text is and how large, but cannot read "
@@ -151,14 +159,25 @@ def main() -> int:
             results = {}
 
     written = 0
+    used: set[str] = set()
     for page_dir in page_dirs:
         try:
-            hints = results.get(page_dir) or builtin_page(page_dir)
+            hints = results.get(page_dir)
+            if hints is None and local_ocr:
+                try:
+                    hints = rapid_text_hints.page_hints(page_dir)
+                    if not hints["lines"]:
+                        # Nothing readable (e.g. stylised or synthetic ink): geometry beats nothing.
+                        hints = None
+                except Exception as exc:
+                    print(f"text-hints: {page_dir.name}: RapidOCR failed ({exc}); using built-in detector", file=sys.stderr)
+                    hints = None
+            hints = hints or builtin_page(page_dir)
             # Dense diagrams can defeat the OCR layout model entirely (the
             # whole figure is classified as an image and only a headline
             # survives). When OCR found almost nothing but the offline
             # detector finds plenty, the geometric hints are more useful.
-            if hints.get("backend") == "paddleocr-vl" and len(hints["lines"]) <= 2:
+            if hints.get("backend") in ("paddleocr-vl", "rapidocr") and len(hints["lines"]) <= 2:
                 offline = builtin_page(page_dir)
                 if len(offline["lines"]) >= 6:
                     print(
@@ -168,10 +187,11 @@ def main() -> int:
                     )
                     hints = offline
             write_hints(page_dir, hints, overlay=not args.no_overlay)
+            used.add(hints.get("backend", "builtin-ink"))
             written += 1
         except Exception as exc:
             print(f"text-hints: {page_dir.name} failed ({exc}); worker can run `editppt page hints` itself", file=sys.stderr)
-    print(f"text-hints: wrote {written}/{len(page_dirs)} pages (backend={backend})")
+    print(f"text-hints: wrote {written}/{len(page_dirs)} pages (backend={'+'.join(sorted(used)) or backend})")
     return 0
 
 

@@ -30,7 +30,7 @@ The upstream skill targets Codex. These are the substitutions that make it work 
 | Worker id for `--agent-id` | The same name you gave the agent (`ppt-page_003`); `main` for single-page local mode. |
 | Wait for workers | Background agents notify you when they finish. Don't poll in a loop. |
 | Send a repair back to the worker | `SendMessage` to the worker's name, so it keeps its context. |
-| Sandbox / network approval | Claude Code permission prompts. The only external call in a claude-native run is PaddleOCR (`editppt prepare` / `editppt run hints`, when a token is configured); `editppt image generate/edit` also calls out if the optional upgrade is used. |
+| Sandbox / network approval | Claude Code permission prompts. A claude-native run with local RapidOCR hints makes no external calls at all. PaddleOCR is called only when a token is configured (`editppt prepare` / `editppt run hints`); `editppt image generate/edit` also calls out if the optional upgrade is used. |
 
 ## Entry Contract
 
@@ -79,7 +79,7 @@ editppt prepare <input...> --image-backend claude-native
 
 Keep the default `--out-root`: it creates the working run directory `output/image-to-editable-ppt/<job-id>/` under the current directory. Don't point it at the folder where the user wants the result; that folder should receive only the final deck (Phase 4). Afterward there must be `deck_manifest.json`, `page_jobs.json`, `notes_manifest.json`, and each page must have `source.png` plus `page_request.json`.
 
-Prepare also writes per-page text hints (`text_hints.json`/`text_hints.png`). If `doctor` or prepare reports no PaddleOCR token (offline fallback), ask the user once before dispatching any page: a free token from https://aistudio.baidu.com/account/accessToken, stored with `editppt config --paddle-ocr-token <token>`, makes hints content-aware (it reads the text, not just measures where it is) and noticeably improves text fidelity; `editppt run hints <run>` then regenerates the current run's hints in place. The free personal quota is more than enough for this skill. Wait for their choice; if they decline, continue with offline hints and don't ask again.
+Prepare also writes per-page text hints (`text_hints.json`/`text_hints.png`). With no token, they come from local RapidOCR, which reads the text on-device with no upload, so don't ask the user for anything. Only if prepare reports the geometry-only `builtin-ink` backend (RapidOCR unavailable) should you ask the user once before dispatching any page: a free token from https://aistudio.baidu.com/account/accessToken, stored with `editppt config --paddle-ocr-token <token>`, makes hints content-aware (it reads the text, not just measures where it is) and noticeably improves text fidelity; `editppt run hints <run>` then regenerates the current run's hints in place. The free personal quota is more than enough for this skill. Wait for their choice; if they decline, continue with offline hints and don't ask again.
 
 If a token is configured but OCR fell back because a permission prompt or network failure blocked it, that's not the preferred quality path: get the call allowed and rerun `editppt run hints <run>` before page reconstruction. Continue offline only after the user declines OCR, after an allowed OCR attempt fails for a real service reason, or when the user asked for local-only handling.
 

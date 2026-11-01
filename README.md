@@ -15,7 +15,7 @@ uv tool install --force --editable skills/image-to-editable-ppt/cli
 editppt doctor
 ```
 
-Optional: a free PaddleOCR token (https://aistudio.baidu.com/account/accessToken) makes the text-size and position hints content-aware: `editppt config --paddle-ocr-token <token>`.
+Text-size and position hints come from **local RapidOCR** (PP-OCR models on ONNX Runtime, installed with the CLI). It reads Chinese and Latin text on-device, with no token and no upload. On the eval slides it read 39/39 key strings in 0.5-1.2 s per page. A PaddleOCR-VL cloud token remains an optional extra: `editppt config --paddle-ocr-token <token>`.
 
 ## Use
 
@@ -37,6 +37,7 @@ A single page is rebuilt by the main session. Multi-page inputs are dispatched t
 | Assets are bitmaps | SVG is embedded via the Office `svgBlip` extension with a PNG fallback. In PowerPoint, **Convert to Shape** makes the icons editable. |
 | Codex page workers, `view_image` | `Agent` background subagents, `SendMessage` for repairs, `Read` for images |
 | Image API key required | No key needed. The API path remains an optional upgrade. |
+| PaddleOCR-VL cloud token, otherwise geometry-only text hints | Local RapidOCR by default (reads text, no token, no upload); PaddleOCR-VL optional |
 
 Runtime additions: `cli/editppt/runtime/claude_native_assets.py`, `editppt page merge-fragments`, `svgBlip` emission in the builder, paragraph `line_height` → `a:lnSpc`, a default white slide background (Keynote renders a missing background as black), and validator guards for the new provenance types. The guards accept photo regions only for photo-like objects, reject native text drawn over un-inpainted source pixels, and require an SVG trace to embed its SVG. Upstream deliberately removed a generic crop command because agents used it to fake editability; these guards keep that door closed.
 

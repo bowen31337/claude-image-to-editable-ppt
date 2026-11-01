@@ -103,13 +103,13 @@ editppt config --api-key "<key>" --base-url "<openai-compatible-base-url>" --mod
 
 Write `editppt config` only when API fallback is needed or when the user explicitly provides a third-party image API. Do not write API keys into the project directory, run directory, prompts, or manifests.
 
-Optional but recommended on first use: configure a PaddleOCR-VL token. The offline detector only measures text geometry (where and how large); with a token the hints also carry recognized text content and cleaner block boundaries. Store it next to the other credentials:
+Text hints are produced by the first available backend: PaddleOCR-VL (cloud, needs a token), then RapidOCR (local PP-OCR models on ONNX Runtime, installed with the CLI, reads text with no token and no upload), then the built-in geometry-only detector. A PaddleOCR-VL token is optional and adds cloud layout analysis:
 
 ```bash
 editppt config --paddle-ocr-token "<token>"
 ```
 
-`editppt doctor` reports the current text-hints backend; without a token everything still works through the built-in offline detector. When and how to ask the user about the token — including the application URL and the regenerate step — is defined in `SKILL.md` Phase 1.
+`editppt doctor` reports the current text-hints backend (`paddleocr-vl`, `rapidocr`, or `builtin-ink`). When and how to ask the user about the token — including the application URL and the regenerate step — is defined in `SKILL.md` Phase 1.
 
 ## Run Commands
 

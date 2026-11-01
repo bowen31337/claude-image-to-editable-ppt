@@ -198,12 +198,18 @@ class DeckTextHintsTest(unittest.TestCase):
             result = _sub.run([sys.executable, str(RUNTIME_DIR / "deck_text_hints.py"), str(run_dir)],
                               env=env, text=True, capture_output=True)
             self.assertEqual(0, result.returncode, result.stderr)
-            self.assertIn("backend=builtin-ink", result.stdout)
+            # Without a token, local RapidOCR is used when installed; otherwise the geometry-only detector.
+            try:
+                import rapidocr  # noqa: F401
+                expected_backend = "backend=rapidocr"
+            except ImportError:
+                expected_backend = "backend=builtin-ink"
+            self.assertIn(expected_backend, result.stdout)
             for page_id in ("page_001", "page_002"):
                 hints_path = run_dir / "pages" / page_id / "text_hints.json"
                 self.assertTrue(hints_path.exists())
                 hints = _json.loads(hints_path.read_text())
-                self.assertEqual("builtin-ink", hints["backend"])
+                self.assertEqual(expected_backend.split("=")[1], hints["backend"])
                 self.assertTrue(hints["lines"], "fallback detector must report the drawn text")
                 self.assertTrue((run_dir / "pages" / page_id / "text_hints.png").exists())
 
