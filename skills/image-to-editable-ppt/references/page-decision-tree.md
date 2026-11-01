@@ -164,7 +164,7 @@ If an image backend is also configured (`optional_upgrade` in the contract) and 
 2. Write the SVG with the fewest primitives that reproduce the shape: `rect` (with `rx`), `circle`, `ellipse`, `line`, `polyline`, and `path` with as few nodes as the shape needs (Bézier curves for curves, not dense point sampling). Line icons use `stroke` with the measured width and matching `stroke-linecap`/`stroke-linejoin`. Counters and holes use `fill-rule="evenodd"` or white-over-fill only when the source background behind the hole is that exact color.
 3. Run `editppt image svg <page_dir> --svg assets/<id>.svg --box x,y,w,h --object-type <type>`. Read the `.compare.png` it writes, and check `fidelity.ink_iou`.
 4. Iterate on what the comparison shows: wrong proportions, missing strokes, wrong corner radii, or wrong colors. Aim for `ink_iou` ≥ 0.8 on simple icons; detailed illustrations may land lower and still be faithful. Stop when the comparison matches in shape, color, and identity, or after about three refinements. Remaining small differences ship as warnings (see "Fix versus Warning").
-5. Merge the fragment's `images`, `asset_provenance`, and `visual_inventory` into `manifest.json`.
+5. After all assets for the page exist, run `editppt page merge-fragments <page_dir>` once. It merges every fragment's `images`, `asset_provenance`, and `visual_inventory` into `manifest.json`, so don't copy fragment entries by hand. Re-run it after any re-trace.
 
 Never trace ordinary text into the SVG (it stays native text, 3.1). Never substitute a different, "cleaner", or generic symbol for the source object; a trace reproduces the source's identity, it doesn't redesign it.
 

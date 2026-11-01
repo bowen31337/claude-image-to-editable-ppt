@@ -504,6 +504,83 @@ def cmd_zoom(args) -> int:
     return 0
 
 
+# ---------------------------------------------------------------- merge-fragments
+
+MERGE_KEYS = {
+    "images": ("id", "path"),
+    "asset_provenance": ("path",),
+    "visual_inventory": ("id", "asset", "path"),
+    "formula_inventory": ("id",),
+}
+
+
+def _entry_key(entry: dict, keys: tuple) -> str | None:
+    for key in keys:
+        if entry.get(key):
+            return f"{key}={entry[key]}"
+    return None
+
+
+def manifest_skeleton(page_dir: Path) -> dict:
+    """Canvas fields copied verbatim from page_request.json; decisions left to the agent."""
+    request_path = page_dir / "page_request.json"
+    request = json.loads(request_path.read_text(encoding="utf-8")) if request_path.exists() else {}
+    size = request.get("source_size_px")
+    if isinstance(size, dict):
+        width, height = size.get("width") or size.get("width_px"), size.get("height") or size.get("height_px")
+    elif isinstance(size, (list, tuple)) and len(size) == 2:
+        width, height = size
+    else:
+        from PIL import Image
+        with Image.open(page_dir / "source.png") as image:
+            width, height = image.size
+    manifest = {"schema_version": 1, "source": {"width_px": width, "height_px": height}}
+    for key in ("slide", "content_box"):
+        if key in request:
+            manifest[key] = request[key]
+    manifest.update({"text_boxes": [], "shapes": [], "images": [], "asset_provenance": [], "visual_inventory": []})
+    return manifest
+
+
+def cmd_merge_fragments(args) -> int:
+    page_dir = Path(args.page_dir).resolve()
+    manifest_path = resolve_in_page(page_dir, args.manifest)
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8")) if manifest_path.exists() else manifest_skeleton(page_dir)
+    paths = [resolve_in_page(page_dir, f) for f in args.fragments] if args.fragments else sorted((page_dir / "assets").glob("**/*.fragment.json"))
+    counts = {"added": 0, "replaced": 0}
+    for fragment_path in paths:
+        fragment = json.loads(fragment_path.read_text(encoding="utf-8"))
+        for field, keys in MERGE_KEYS.items():
+            entries = fragment.get(field) or []
+            if not entries:
+                continue
+            target = manifest.setdefault(field, [])
+            index = {_entry_key(e, keys): i for i, e in enumerate(target) if isinstance(e, dict) and _entry_key(e, keys)}
+            for entry in entries:
+                key = _entry_key(entry, keys)
+                if key in index:
+                    # Re-traced asset: keep the agent's z_index/alt edits only if asked.
+                    if args.keep_existing_layout and field == "images":
+                        entry = {**entry, **{k: target[index[key]][k] for k in ("z_index", "alt") if k in target[index[key]]}}
+                    target[index[key]] = entry
+                    counts["replaced"] += 1
+                else:
+                    index[key] = len(target)
+                    target.append(entry)
+                    counts["added"] += 1
+    if not args.dry_run:
+        manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    print(json.dumps({
+        "manifest": str(manifest_path),
+        "fragments": len(paths),
+        **counts,
+        "images": len(manifest.get("images", [])),
+        "still_needed": [k for k in ("background_strategy", "quality_checks") if k not in manifest],
+        "dry_run": args.dry_run,
+    }, indent=2))
+    return 0
+
+
 # ---------------------------------------------------------------- cli
 
 
@@ -523,6 +600,14 @@ def build_parser() -> argparse.ArgumentParser:
     svg.add_argument("--allow-identity-text", action="store_true", help="Permit <text> for logo wordmarks only")
     svg.add_argument("--fragment", help="Fragment output path (default assets/<id>.fragment.json)")
     svg.set_defaults(func=cmd_svg)
+
+    merge = sub.add_parser("merge-fragments", help="Merge asset/formula fragments into manifest.json (idempotent).")
+    merge.add_argument("page_dir")
+    merge.add_argument("--fragments", nargs="*", help="Fragment files (default: every assets/**/*.fragment.json)")
+    merge.add_argument("--manifest", default="manifest.json")
+    merge.add_argument("--keep-existing-layout", action="store_true", help="On replace, keep the manifest's existing z_index/alt for images")
+    merge.add_argument("--dry-run", action="store_true")
+    merge.set_defaults(func=cmd_merge_fragments)
 
     zoom = sub.add_parser("zoom", help="Magnified source crop with a coordinate grid and dominant colours, for tracing.")
     zoom.add_argument("page_dir")

@@ -168,6 +168,12 @@ Purpose: after all pages are recorded, rebuild, validate, and output the final P
 
 ## Page Build Commands
 
+```bash
+editppt page merge-fragments pages/page_001
+```
+
+Purpose: merge every `assets/**/*.fragment.json` (from `image svg`, `image photo-region`, `image inpaint`, and `formula render-latex` when written under `assets/`) into `manifest.json`. Entries are keyed by id/path, so re-running after a re-trace replaces entries instead of duplicating them. If `manifest.json` doesn't exist yet, it is seeded with `source`, `slide`, and `content_box` from `page_request.json`. The JSON summary lists `still_needed` decision fields (`background_strategy`, `quality_checks`) that the reconstructor must write itself. Options: `--fragments <files...>`, `--keep-existing-layout` (keep current `z_index`/`alt` on replace), `--dry-run`.
+
 These are the worker-side commands for turning a finished `manifest.json` into the required page artifacts. Use them instead of writing any page-local PowerPoint or imaging code.
 
 ```bash

@@ -269,6 +269,43 @@ class LineSpacingTest(unittest.TestCase):
         self.assertNotIn("lnSpc", plain)
 
 
+class MergeFragmentsTest(unittest.TestCase):
+    def test_merge_seeds_manifest_is_idempotent_and_replaces_retraces(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            page = make_page(tmp)
+            (page / "page_request.json").write_text(json.dumps({
+                "source_size_px": [1600, 900],
+                "slide": {"width": 13.333, "height": 7.5},
+                "content_box": {"left": 0, "top": 0, "width": 13.333, "height": 7.5},
+            }), encoding="utf-8")
+            (page / "assets/icon_dot.svg").write_text(CIRCLE_SVG, encoding="utf-8")
+            editppt("image", "svg", page, "--svg", "assets/icon_dot.svg", "--box", "200,200,100,100")
+            editppt("image", "photo-region", page, "--box", "900,300,500,400", "--id", "texture", "--object-type", "textured-image-block")
+            first = json.loads(editppt("page", "merge-fragments", page).stdout)
+            self.assertEqual((6, 0), (first["added"], first["replaced"]))  # 3 entries per fragment
+            self.assertEqual(["background_strategy", "quality_checks"], first["still_needed"])
+            manifest = json.loads((page / "manifest.json").read_text())
+            self.assertEqual({"width_px": 1600, "height_px": 900}, manifest["source"])
+            self.assertEqual(13.333, manifest["slide"]["width"])
+            # Re-trace the icon (new colour) and merge again: replaced, not duplicated.
+            (page / "assets/icon_dot.svg").write_text(CIRCLE_SVG.replace("#cc3333", "#cc3334"), encoding="utf-8")
+            editppt("image", "svg", page, "--svg", "assets/icon_dot.svg", "--box", "200,200,100,100")
+            second = json.loads(editppt("page", "merge-fragments", page).stdout)
+            self.assertEqual((0, 6), (second["added"], second["replaced"]))
+            manifest = json.loads((page / "manifest.json").read_text())
+            self.assertEqual(2, len(manifest["images"]))
+            self.assertEqual(2, len(manifest["asset_provenance"]))
+            # Agent adds its decisions and text, then the merged page builds and validates.
+            manifest.update(page_manifest(manifest["images"], manifest["asset_provenance"], manifest["visual_inventory"],
+                                          text_boxes=[{"text": "Title", "box_px": [100, 50, 600, 70], "font_size": 28}]))
+            # The title sits on plain source pixels outside the photo region, so no inpaint is needed.
+            (page / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+            self.assertEqual(0, editppt("page", "build", page).returncode)
+            editppt("page", "validate", page, "--report", page / "validation.json")
+            report = json.loads((page / "validation.json").read_text())
+            self.assertTrue(report["passed"], json.dumps(report["page_contract_violations"])[:2000])
+
+
 class ClaudeNativeBackendContractTest(unittest.TestCase):
     def test_prepare_records_claude_native_contract(self):
         with tempfile.TemporaryDirectory() as tmp:

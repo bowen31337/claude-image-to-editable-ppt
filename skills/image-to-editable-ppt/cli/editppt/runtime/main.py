@@ -709,6 +709,9 @@ comparison image.
     page_hints.add_argument("page_args", nargs=argparse.REMAINDER)
     page_hints.set_defaults(func=lambda args: run_script("text_hints.py", args.page_args))
 
+    page_merge = page_sub.add_parser("merge-fragments", help="Merge asset/formula *.fragment.json files into manifest.json (idempotent).", add_help=False)
+    page_merge.add_argument("page_args", nargs=argparse.REMAINDER)
+
     page_build = page_sub.add_parser(
         "build",
         help="Build page.pptx and preview.png from manifest.json with the deterministic runtime.",
@@ -811,6 +814,8 @@ def main() -> int:
     raw_argv = sys.argv[1:]
     if len(raw_argv) >= 2 and raw_argv[0] == "image" and raw_argv[1] in {"generate", "edit"}:
         return run_script("image_gen.py", [raw_argv[1], *raw_argv[2:]])
+    if len(raw_argv) >= 2 and raw_argv[0] == "page" and raw_argv[1] == "merge-fragments":
+        return run_script("claude_native_assets.py", raw_argv[1:])
     if len(raw_argv) >= 2 and raw_argv[0] == "image" and raw_argv[1] in {"zoom", "svg", "inpaint", "photo-region"}:
         return run_script("claude_native_assets.py", raw_argv[1:])
 

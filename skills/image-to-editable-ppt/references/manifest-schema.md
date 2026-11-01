@@ -433,7 +433,7 @@ State and provenance record rules are described in the State Principles section 
 
 Written by `editppt prepare --image-backend claude-native` for agents that can see images but cannot generate them (Claude Code). The `image_backend` contract has `backend_id: "claude-native"`, `requires_openai_api_key: false`, an `object_sources` map, and an `optional_upgrade` note: when `editppt doctor --check-api` reports a ready backend, `editppt image generate/edit` outputs may still be imported with `--backend codex-oauth|openai-compatible-api`. Which object uses which source is decided in `page-decision-tree.md` section 2.4.
 
-Each native command records a job in `imagegen-jobs.json` and writes a manifest fragment (`assets/<id>.fragment.json`) whose `images`, `asset_provenance`, and `visual_inventory` entries are merged into `manifest.json` unchanged.
+Each native command records a job in `imagegen-jobs.json` and writes a manifest fragment (`assets/<id>.fragment.json`) whose `images`, `asset_provenance`, and `visual_inventory` entries are merged into `manifest.json` unchanged by `editppt page merge-fragments`.
 
 `claude-svg` (from `editppt image svg`):
 
