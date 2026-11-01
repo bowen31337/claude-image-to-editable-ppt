@@ -489,6 +489,7 @@ contract. The standalone CLI default is editppt-image-cli.
         epilog="""Examples:
   editppt prepare slide.png
   editppt prepare slide.png --image-backend builtin-imagegen
+  editppt prepare slide.png --image-backend claude-native
   editppt prepare deck.pdf --max-concurrent-pages 3
   editppt prepare a.png b.png --out-root output/image-to-editable-ppt
 """,
@@ -500,9 +501,9 @@ contract. The standalone CLI default is editppt-image-cli.
     prepare.add_argument("--max-concurrent-pages", type=int, metavar="N", help="Maximum concurrent page dispatch slots. Default: 6.")
     prepare.add_argument(
         "--image-backend",
-        choices=["builtin-imagegen", "editppt-image-cli"],
+        choices=["builtin-imagegen", "editppt-image-cli", "claude-native"],
         default="editppt-image-cli",
-        help="Run-level image backend contract. Defaults to editppt-image-cli; parent agents can select builtin-imagegen.",
+        help="Run-level image backend contract. Defaults to editppt-image-cli; Codex parents can select builtin-imagegen; agents without image generation (Claude Code) select claude-native.",
     )
     prepare.add_argument("--no-text-hints", action="store_true", help="Skip per-page text hint generation after preparing pages.")
     prepare.set_defaults(func=cmd_prepare)
@@ -557,7 +558,7 @@ Use this when a parent Agent selects image_gen.imagegen or when forcing other ba
     backend.add_argument("run", metavar="RUN", help="Run directory or deck_manifest.json path.")
     backend.add_argument(
         "--mode",
-        choices=["builtin-imagegen", "editppt-image-cli", "openai-compatible-api"],
+        choices=["builtin-imagegen", "editppt-image-cli", "openai-compatible-api", "claude-native"],
         default="editppt-image-cli",
         help="Image backend mode. Defaults to the unified editppt image CLI contract.",
     )
@@ -794,6 +795,15 @@ Patterns:
     process_sheet.add_argument("process_args", nargs=argparse.REMAINDER)
     process_sheet.set_defaults(func=cmd_process_asset_sheet)
 
+    for name, help_text in (
+        ("zoom", "Claude-native: magnified source crop with coordinate grid and dominant colours for tracing."),
+        ("svg", "Claude-native: validate/render an agent-authored SVG trace of one foreground object."),
+        ("inpaint", "Claude-native: build a clean base by locally inpainting rebuilt text/objects out of source.png."),
+        ("photo-region", "Claude-native: extract a rectangular photo/screenshot-like object from source.png."),
+    ):
+        native = image_sub.add_parser(name, help=help_text, add_help=False)
+        native.add_argument("native_args", nargs=argparse.REMAINDER)
+
     return parser
 
 
@@ -801,6 +811,8 @@ def main() -> int:
     raw_argv = sys.argv[1:]
     if len(raw_argv) >= 2 and raw_argv[0] == "image" and raw_argv[1] in {"generate", "edit"}:
         return run_script("image_gen.py", [raw_argv[1], *raw_argv[2:]])
+    if len(raw_argv) >= 2 and raw_argv[0] == "image" and raw_argv[1] in {"zoom", "svg", "inpaint", "photo-region"}:
+        return run_script("claude_native_assets.py", raw_argv[1:])
 
     parser = build_parser()
     args, extra = parser.parse_known_args()

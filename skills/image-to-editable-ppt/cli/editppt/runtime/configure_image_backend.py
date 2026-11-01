@@ -6,6 +6,8 @@ from deck_run_state import load_deck, load_jobs, read_json, run_dir_from_target,
 
 
 def backend_contract(args):
+    if args.backend_id == "claude-native":
+        return claude_native_contract(args)
     is_builtin = args.backend_id == "builtin-imagegen"
     requires_api_key = args.backend_id == "openai-compatible-api"
     contract = {
@@ -54,13 +56,36 @@ def backend_contract(args):
     return contract
 
 
+def claude_native_contract(args):
+    """Backend for agents with vision but no image generation (e.g. Claude Code)."""
+    return {
+        "backend_id": "claude-native",
+        "tool_name": "editppt image svg / inpaint / photo-region",
+        "tool_call": "editppt image svg|inpaint|photo-region",
+        "fallback_command": "editppt image generate/edit",
+        "runtime_home": args.runtime_home,
+        "model": None,
+        "requires_openai_api_key": False,
+        "mode_policy": "per-object: vector trace, local inpaint, or photo region",
+        "object_sources": {
+            "vector-traceable foreground": "editppt image svg (source_type claude-svg)",
+            "photographic/screenshot foreground": "editppt image photo-region (source_type source-photo-region)",
+            "complex background with baked text/objects": "editppt image inpaint (source_type local-inpaint-clean-base)",
+        },
+        "optional_upgrade": "if editppt doctor --check-api reports a ready backend, editppt image generate/edit may be used for objects the native paths cannot reproduce; import with editppt image import --backend codex-oauth|openai-compatible-api",
+        "input_context_policy": "inspect source.png and zoomed crops with the agent's image viewer before tracing",
+        "save_path_policy": "every command writes inside the page dir and records imagegen-jobs.json; merge the printed fragment into manifest.json",
+        "handoff_rule": "run asset commands serially per page; never draw foreground objects with native primitives",
+    }
+
+
 def main():
     parser = argparse.ArgumentParser(description="Record the run-level image backend contract.")
     parser.add_argument("run")
     parser.add_argument(
         "--backend-id",
         default="editppt-image-cli",
-        choices=["builtin-imagegen", "editppt-image-cli", "openai-compatible-api"],
+        choices=["builtin-imagegen", "editppt-image-cli", "openai-compatible-api", "claude-native"],
     )
     parser.add_argument("--tool-name")
     parser.add_argument("--tool-call")

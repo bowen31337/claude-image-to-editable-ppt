@@ -70,6 +70,12 @@ def main():
             raise SystemExit("An editppt-image-cli page contract requires --backend codex-oauth or openai-compatible-api")
         if args.fallback_reason:
             raise SystemExit("--fallback-reason requires a builtin-imagegen page contract")
+    elif preferred_backend == "claude-native":
+        # Optional upgrade path: API-generated assets may be imported when available.
+        if args.backend not in cli_backends:
+            raise SystemExit("A claude-native page contract imports only codex-oauth or openai-compatible-api outputs; use editppt image svg/inpaint/photo-region for native assets")
+        if args.fallback_reason:
+            raise SystemExit("--fallback-reason requires a builtin-imagegen page contract")
     elif preferred_backend == "openai-compatible-api":
         if args.backend != "openai-compatible-api":
             raise SystemExit("An openai-compatible-api page contract requires --backend openai-compatible-api")

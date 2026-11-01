@@ -418,6 +418,32 @@ def text_box_xml(idx, item):
       </p:sp>"""
 
 
+SVG_BLIP_EXT_URI = "{96DAC541-7B7A-43D3-8B79-37D633B846F1}"
+
+
+def svg_rel_id(rel_id):
+    return rel_id.replace("rId", "rIdSvg", 1)
+
+
+def blip_xml(rel_id, item):
+    """PNG blip; with svg_path, add the Office 2016 svgBlip extension.
+
+    PowerPoint renders the SVG and offers "Convert to Shape"; older readers fall
+    back to the PNG referenced by r:embed.
+    """
+    if not item.get("svg_path"):
+        return f'<a:blip r:embed="{rel_id}"/>'
+    return (
+        f'<a:blip r:embed="{rel_id}"><a:extLst><a:ext uri="{SVG_BLIP_EXT_URI}">'
+        f'<asvg:svgBlip xmlns:asvg="http://schemas.microsoft.com/office/drawing/2016/SVG/main" r:embed="{svg_rel_id(rel_id)}"/>'
+        "</a:ext></a:extLst></a:blip>"
+    )
+
+
+def svg_media_name(media_index):
+    return f"svg{media_index}.svg"
+
+
 def image_xml(idx, rel_id, item):
     left = emu(item.get("left", 0))
     top = emu(item.get("top", 0))
@@ -427,7 +453,7 @@ def image_xml(idx, rel_id, item):
     return f"""
       <p:pic>
         <p:nvPicPr><p:cNvPr id="{idx}" name="{name}"/><p:cNvPicPr/><p:nvPr/></p:nvPicPr>
-        <p:blipFill><a:blip r:embed="{rel_id}"/><a:stretch><a:fillRect/></a:stretch></p:blipFill>
+        <p:blipFill>{blip_xml(rel_id, item)}<a:stretch><a:fillRect/></a:stretch></p:blipFill>
         <p:spPr><a:xfrm><a:off x="{left}" y="{top}"/><a:ext cx="{width}" cy="{height}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr>
       </p:pic>"""
 
@@ -564,6 +590,8 @@ def rels_xml(manifest, media_start=1, notes_index=None):
     for i, item in enumerate(manifest.get("images", []), start=1):
         target = f"../media/image{media_start + i - 1}{image_ext(item['path'])}"
         rels.append(f'<Relationship Id="rId{i + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="{target}"/>')
+        if item.get("svg_path"):
+            rels.append(f'<Relationship Id="rIdSvg{i + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/{svg_media_name(media_start + i - 1)}"/>')
     if notes_index is not None:
         rels.append(
             f'<Relationship Id="rId{len(rels) + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/notesSlide" Target="../notesSlides/notesSlide{notes_index}.xml"/>'
@@ -626,6 +654,8 @@ def content_types_xml(manifests, notes_indices=None):
         for item in manifest.get("images", []):
             ext = image_ext(item["path"]).lstrip(".")
             defaults[ext] = content_type_for(item["path"])
+            if item.get("svg_path"):
+                defaults["svg"] = "image/svg+xml"
     default_xml = "".join(f'<Default Extension="{ext}" ContentType="{ctype}"/>' for ext, ctype in defaults.items())
     overrides = [
         '<Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/>',
@@ -710,6 +740,9 @@ def write_pptx(manifest, out_path, manifest_path):
             if not src.is_absolute():
                 src = base / src
             z.write(src, f"ppt/media/image{media_index}{image_ext(src)}")
+            if item.get("svg_path"):
+                svg_src = Path(item["svg_path"])
+                z.write(svg_src if svg_src.is_absolute() else base / svg_src, f"ppt/media/{svg_media_name(media_index)}")
             media_index += 1
 
 
@@ -745,6 +778,9 @@ def write_deck(deck, page_entries, out_path, notes_entries):
                 if not src.is_absolute():
                     src = base / src
                 z.write(src, f"ppt/media/image{media_index}{image_ext(src)}")
+                if item.get("svg_path"):
+                    svg_src = Path(item["svg_path"])
+                    z.write(svg_src if svg_src.is_absolute() else base / svg_src, f"ppt/media/{svg_media_name(media_index)}")
                 media_index += 1
             if notes_index is not None:
                 note = notes_by_page[slide_index]

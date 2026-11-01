@@ -23,6 +23,18 @@ ALLOWED_SOURCE_TYPES = {
     "latex-rendered-formula",
     "user-provided",
     "user-approved-rasterization",
+    # Claude-native backend (no image model): see claude_native_violations().
+    "claude-svg",
+    "source-photo-region",
+    "local-inpaint-clean-base",
+}
+PHOTO_REGION_OBJECT_TYPES = {
+    "photo",
+    "screenshot",
+    "video-cover",
+    "map",
+    "textured-image-block",
+    "complex-illustration",
 }
 REQUIRED_QUALITY_CHECKS = {
     "font_size_calibrated",
@@ -148,7 +160,7 @@ def has_forbidden_decision(decision):
 
 def foreground_asset_contract_violations(manifest):
     violations = []
-    allowed_foreground_sources = {"asset-sheet-separated", "imagegen"}
+    allowed_foreground_sources = {"asset-sheet-separated", "imagegen", "claude-svg", "source-photo-region"}
     provenance_by_path = {
         Path(entry["path"]).as_posix(): entry
         for entry in manifest.get("asset_provenance", [])
@@ -189,7 +201,95 @@ def foreground_asset_contract_violations(manifest):
             continue
         path = Path(entry.get("path", "")).as_posix()
         if (path in foreground_paths or is_foreground_visual_item(entry)) and entry.get("source_type") not in allowed_foreground_sources:
-            violations.append({"field": f"asset_provenance[{index}]", "path": path, "reason": "foreground asset provenance must use asset-sheet-separated or imagegen"})
+            violations.append({"field": f"asset_provenance[{index}]", "path": path, "reason": "foreground asset provenance must use asset-sheet-separated, imagegen, claude-svg, or source-photo-region"})
+    return violations
+
+
+def _box(value):
+    try:
+        x, y, w, h = (float(v) for v in value)
+    except (TypeError, ValueError):
+        return None
+    return (x, y, w, h) if w > 0 and h > 0 else None
+
+
+def _overlap_area(a, b):
+    width = min(a[0] + a[2], b[0] + b[2]) - max(a[0], b[0])
+    height = min(a[1] + a[3], b[1] + b[3]) - max(a[1], b[1])
+    return max(0.0, width) * max(0.0, height)
+
+
+def _covered_fraction(target, boxes):
+    """Approximate fraction of target covered by the union of boxes (24x24 sample grid)."""
+    if not boxes:
+        return 0.0
+    hits = 0
+    steps = 24
+    for i in range(steps):
+        for j in range(steps):
+            px = target[0] + (i + 0.5) * target[2] / steps
+            py = target[1] + (j + 0.5) * target[3] / steps
+            if any(b[0] <= px <= b[0] + b[2] and b[1] <= py <= b[1] + b[3] for b in boxes):
+                hits += 1
+    return hits / (steps * steps)
+
+
+def claude_native_violations(manifest):
+    """Evidence rules for the claude-native backend's three asset sources.
+
+    Upstream removed its generic crop command because agents used crops to fake
+    editability. These checks keep the native replacements narrow:
+    - claude-svg: the image must embed the SVG it claims as its source.
+    - source-photo-region: only photo-like object types, never ~the whole page,
+      and no rebuilt text may sit on it unless that area was inpainted out.
+    - local-inpaint-clean-base: something must actually have been removed, and
+      every native text box drawn over the base must have been removed from it
+      (otherwise the original text is baked in underneath the editable copy).
+    """
+    violations = []
+    images_by_path = {Path(item.get("path", "")).as_posix(): item for item in manifest.get("images", []) if item.get("path")}
+    text_boxes = [b for b in (_box(item.get("box_px")) for item in manifest.get("text_boxes", [])) if b]
+    text_boxes += [b for b in (_box(item.get("box_px")) for item in manifest.get("tables", [])) if b]
+    source = manifest.get("source") or {}
+    page_area = float(source.get("width_px") or 0) * float(source.get("height_px") or 0)
+
+    for index, entry in enumerate(manifest.get("asset_provenance", [])):
+        if not isinstance(entry, dict):
+            continue
+        field = f"asset_provenance[{index}]"
+        source_type = entry.get("source_type")
+        path = Path(entry.get("path", "")).as_posix()
+        image = images_by_path.get(path, {})
+        if source_type == "claude-svg":
+            svg = str(entry.get("source") or "")
+            if not svg.lower().endswith(".svg"):
+                violations.append({"field": field + ".source", "path": path, "reason": "claude-svg provenance source must be the traced .svg file"})
+            elif image and Path(str(image.get("svg_path", ""))).as_posix() != Path(svg).as_posix():
+                violations.append({"field": "images.svg_path", "path": path, "reason": "claude-svg image must embed its traced SVG via svg_path"})
+            continue
+        if source_type not in {"source-photo-region", "local-inpaint-clean-base"}:
+            continue
+        region = _box(image.get("box_px")) or _box(entry.get("source_box_px"))
+        cleaned = [b for b in (_box(v) for v in entry.get("inpainted_boxes_px") or []) if b]
+        if source_type == "source-photo-region":
+            if entry.get("object_type") not in PHOTO_REGION_OBJECT_TYPES:
+                violations.append({"field": field + ".object_type", "path": path, "reason": "source-photo-region is only for photo-like objects: " + ", ".join(sorted(PHOTO_REGION_OBJECT_TYPES))})
+            if region and page_area and region[2] * region[3] >= 0.9 * page_area:
+                violations.append({"field": field, "path": path, "reason": "source-photo-region covers ~the whole page; that is a page screenshot, not a reconstruction"})
+        elif not cleaned:
+            violations.append({"field": field + ".inpainted_boxes_px", "path": path, "reason": "local-inpaint clean base removed nothing; it is a copy of source.png"})
+        if not region:
+            continue
+        for text in text_boxes:
+            if _overlap_area(text, region) < 0.2 * text[2] * text[3]:
+                continue
+            if _covered_fraction(text, cleaned) < 0.7:
+                violations.append({
+                    "field": field,
+                    "path": path,
+                    "text_box_px": list(text),
+                    "reason": "native text sits on this source-derived image but its area was not inpainted out (baked duplicate text)",
+                })
     return violations
 
 
@@ -544,6 +644,7 @@ def validate_deck(args):
                     authoring_violations
                     + page_contract_violations(normalized_manifest)
                     + quality_contract_violations(raw_manifest)
+                    + claude_native_violations(raw_manifest)
                 )
                 if violations:
                     report["page_contract_violations"].append(
@@ -727,7 +828,7 @@ def main():
                     report["missing_parts"].append(part)
             slide_names = sorted(n for n in names if re.match(r"ppt/slides/slide\d+\.xml$", n))
             report["slides"] = len(slide_names)
-            report["images"] = len([n for n in names if n.startswith("ppt/media/")])
+            report["images"] = len([n for n in names if n.startswith("ppt/media/image")])
             report["media_manifest_mismatch"] = report["images"] != report["manifest_image_count"]
             for index, image in enumerate(manifest.get("images", []), start=1):
                 image_path = image.get("path")
@@ -754,6 +855,16 @@ def main():
                         )
                 else:
                     report["missing_manifest_images"].append(str(image_path))
+                svg_path = image.get("svg_path")
+                if svg_path:
+                    svg_media = f"ppt/media/svg{index}.svg"
+                    svg_source = Path(svg_path) if Path(svg_path).is_absolute() else manifest_base / svg_path
+                    if svg_media not in names:
+                        report["media_hash_mismatches"].append({"path": svg_path, "media": svg_media, "reason": "missing svg media part"})
+                    elif not svg_source.exists():
+                        report["missing_manifest_images"].append(str(svg_path))
+                    elif file_sha256(svg_source) != hashlib.sha256(z.read(svg_media)).hexdigest():
+                        report["media_hash_mismatches"].append({"path": svg_path, "media": svg_media, "reason": "hash mismatch"})
             for slide_name in slide_names:
                 rels_name = f"{posixpath.dirname(slide_name)}/_rels/{posixpath.basename(slide_name)}.rels"
                 if rels_name not in names:
@@ -840,7 +951,7 @@ def main():
         if not source_path.exists():
             report["missing_provenance_sources"].append({"path": key, "source": str(source)})
     report["page_contract_violations"] = (
-        authoring_violations + page_contract_violations(manifest) + quality_contract_violations(raw_manifest)
+        authoring_violations + page_contract_violations(manifest) + quality_contract_violations(raw_manifest) + claude_native_violations(raw_manifest)
     )
 
     report["passed"] = (
