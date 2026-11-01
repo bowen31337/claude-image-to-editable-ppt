@@ -439,7 +439,7 @@ Each native command records a job in `imagegen-jobs.json` and writes a manifest 
 
 - `images[].path` is the rendered PNG fallback; `images[].svg_path` is the traced SVG. The builder embeds both (PNG blip plus the Office `svgBlip` extension), so PowerPoint renders the vector and offers "Convert to Shape". Validation hash-checks `ppt/media/svgN.svg` against `svg_path`.
 - `asset_provenance[].source` must be that same `.svg` file; `source_box_px` records the traced source region.
-- The SVG must be self-contained vector geometry: SVG namespace, a `viewBox`, no `<image>`, `<foreignObject>`, `<script>`, or external `href`; `<text>` only with `--allow-identity-text` for logo wordmarks.
+- The SVG must be self-contained vector geometry: SVG namespace, a `viewBox`, no `<image>`, `<foreignObject>`, `<script>`, or external `href`; `<text>` only with `--allow-identity-text` for logo wordmarks. `<style>`, CSS classes, filters, masks, and patterns are accepted with a warning because PowerPoint's SVG renderer handles them poorly; prefer presentation attributes (`fill`, `stroke`, `stroke-width`), gradients, and `opacity`.
 - The job records `fidelity` (`ink_iou`, `mean_color_delta_on_shared_ink`) from comparing the trace with the source crop.
 
 `source-photo-region` (from `editppt image photo-region`):

@@ -39,6 +39,7 @@ PHOTO_OBJECT_TYPES = (
     "complex-illustration",
 )
 FORBIDDEN_SVG_TAGS = {"image", "foreignObject", "script", "iframe", "video", "audio"}
+POWERPOINT_RISKY_TAGS = {"style", "filter", "mask", "pattern", "feGaussianBlur", "feDropShadow"}
 
 
 # ---------------------------------------------------------------- helpers
@@ -184,7 +185,15 @@ def validate_svg(svg_path: Path, allow_identity_text: bool) -> tuple[str, list[s
     view_box = str(root.get("viewBox")).replace(",", " ").split()
     if len(view_box) != 4:
         raise SystemExit("SVG viewBox must be four numbers: min-x min-y width height")
-    return text, []
+    # Legal SVG that PowerPoint's renderer handles poorly or ignores.
+    warnings = []
+    for element in root.iter():
+        local = element.tag.split("}")[-1]
+        if local in POWERPOINT_RISKY_TAGS:
+            warnings.append(f"<{local}> may render incorrectly in PowerPoint; prefer plain fills/strokes")
+        if "class" in element.attrib:
+            warnings.append("CSS class attributes may be ignored by PowerPoint; use presentation attributes (fill=, stroke=)")
+    return text, sorted(set(warnings))
 
 
 def render_svg(svg_text: str, width: int, height: int):

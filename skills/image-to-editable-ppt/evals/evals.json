@@ -53,6 +53,16 @@
         "Non-text visuals are separate movable objects",
         "Icons embedded as SVG vectors (PowerPoint Convert-to-Shape capable)"
       ]
+    },
+    {
+      "id": 4,
+      "name": "flattened-pptx-notes",
+      "prompt": "inputs/flattened_review.pptx came out of an export tool with every slide flattened into a picture. Make it a normal editable deck again - and please don't lose my speaker notes. Save to outputs/.",
+      "expected_output": "2-slide pptx, same order; text/tables/icons editable; speaker notes copied verbatim to matching slides",
+      "files": [
+        "inputs/flattened_review.pptx"
+      ],
+      "assertions": []
     }
   ]
 }

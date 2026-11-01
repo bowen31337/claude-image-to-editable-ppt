@@ -118,6 +118,23 @@ class ZoomCommandTest(unittest.TestCase):
             self.assertTrue(Path(summary["zoom"]).exists())
 
 
+class SvgPowerPointRiskTest(unittest.TestCase):
+    def test_style_and_filter_produce_warnings_not_errors(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            page = make_page(tmp)
+            (page / "assets/s.svg").write_text(
+                '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><style>.a{fill:#cc3333}</style>'
+                '<filter id="f"><feGaussianBlur stdDeviation="1"/></filter><circle class="a" cx="50" cy="50" r="40" fill="#cc3333"/></svg>',
+                encoding="utf-8",
+            )
+            result = editppt("image", "svg", page, "--svg", "assets/s.svg", "--box", "200,200,100,100")
+            self.assertEqual(0, result.returncode, result.stderr)
+            warnings = " ".join(json.loads(result.stdout)["warnings"])
+            self.assertIn("<style>", warnings)
+            self.assertIn("<filter>", warnings)
+            self.assertIn("CSS class", warnings)
+
+
 class SvgEmbeddingTest(unittest.TestCase):
     def test_page_build_embeds_svg_blip_and_validates(self):
         with tempfile.TemporaryDirectory() as tmp:
