@@ -81,6 +81,8 @@ Keep the default `--out-root`: it creates the working run directory `output/imag
 
 Prepare also writes per-page text hints (`text_hints.json`/`text_hints.png`). With no token, they come from local RapidOCR, which reads the text on-device with no upload, so don't ask the user for anything. Only if prepare reports the geometry-only `builtin-ink` backend (RapidOCR unavailable) should you ask the user once before dispatching any page: a free token from https://aistudio.baidu.com/account/accessToken, stored with `editppt config --paddle-ocr-token <token>`, makes hints content-aware (it reads the text, not just measures where it is) and noticeably improves text fidelity; `editppt run hints <run>` then regenerates the current run's hints in place. The free personal quota is more than enough for this skill. Wait for their choice; if they decline, continue with offline hints and don't ask again.
 
+If the user asks for Indra OCR (or for faster/alternative local OCR), run `editppt config --text-hints-backend indra` and reinstall the CLI with the `[indra]` extra (`references/cli-helper.md`). Mention once that Indra's model weights carry a modified OpenRAIL-M license restricting some commercial use. Don't switch to it on your own: RapidOCR read slide text more completely in testing.
+
 If a token is configured but OCR fell back because a permission prompt or network failure blocked it, that's not the preferred quality path: get the call allowed and rerun `editppt run hints <run>` before page reconstruction. Continue offline only after the user declines OCR, after an allowed OCR attempt fails for a real service reason, or when the user asked for local-only handling.
 
 ### Phase 2: Rebuild or dispatch pages

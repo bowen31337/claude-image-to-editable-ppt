@@ -17,6 +17,13 @@ editppt doctor
 
 Text-size and position hints come from **local RapidOCR** (PP-OCR models on ONNX Runtime, installed with the CLI). It reads Chinese and Latin text on-device, with no token and no upload. On the eval slides it read 39/39 key strings in 0.5-1.2 s per page. A PaddleOCR-VL cloud token remains an optional extra: `editppt config --paddle-ocr-token <token>`.
 
+[Indra OCR](https://github.com/datalab-to/indra) is available as an opt-in backend. It is about 4× faster and adds paragraph layout blocks, but read 38/39 vs RapidOCR's 39/39 on the eval slides, and its model weights carry a modified OpenRAIL-M license:
+
+```bash
+uv tool install --force --editable "skills/image-to-editable-ppt/cli[indra]"
+editppt config --text-hints-backend indra
+```
+
 ## Use
 
 Ask in plain language. The skill triggers on its own:

@@ -326,6 +326,55 @@ class RapidOcrHintsTest(unittest.TestCase):
             self.assertTrue(all(len(line["box_px"]) == 4 for line in hints["lines"]))
 
 
+class TextHintsBackendChainTest(unittest.TestCase):
+    def test_auto_order_and_explicit_choices(self):
+        from deck_text_hints import backend_chain
+        self.assertEqual(["rapidocr", "builtin-ink"], backend_chain("auto", has_token=False))
+        self.assertEqual(["paddleocr-vl", "rapidocr", "builtin-ink"], backend_chain("auto", has_token=True))
+        # Indra only when chosen explicitly, then the auto order as fallback.
+        self.assertNotIn("indra", backend_chain("auto", has_token=True))
+        self.assertEqual(["indra", "rapidocr", "builtin-ink"], backend_chain("indra", has_token=False))
+        self.assertEqual(["indra", "paddleocr-vl", "rapidocr", "builtin-ink"], backend_chain("indra", has_token=True))
+        # Choosing Paddle without a token degrades to auto rather than failing.
+        self.assertEqual(["rapidocr", "builtin-ink"], backend_chain("paddleocr-vl", has_token=False))
+
+    def test_configured_backend_reads_env_and_rejects_unknown(self):
+        import os
+        from unittest import mock
+        from deck_text_hints import configured_backend
+        with mock.patch.dict(os.environ, {"EDITPPT_TEXT_HINTS_BACKEND": "indra"}):
+            self.assertEqual("indra", configured_backend())
+        with mock.patch.dict(os.environ, {"EDITPPT_TEXT_HINTS_BACKEND": "tesseract"}):
+            self.assertEqual("auto", configured_backend())
+
+
+class IndraHintsTest(unittest.TestCase):
+    def test_indra_hints_carry_text_boxes_and_layout_blocks(self):
+        try:
+            import indra_ocr  # noqa: F401
+        except ImportError:
+            self.skipTest("indra-ocr not installed (optional [indra] extra)")
+        from PIL import ImageFont
+        import indra_text_hints
+        with tempfile.TemporaryDirectory() as tmp:
+            page = Path(tmp)
+            # Indra only runs layout analysis on pages with some structure, so use a heading + paragraphs.
+            image = Image.new("RGB", (1200, 500), "white")
+            helvetica = "/System/Library/Fonts/Helvetica.ttc"
+            big = ImageFont.truetype(helvetica, 64) if Path(helvetica).exists() else ImageFont.load_default()
+            small = ImageFont.truetype(helvetica, 32) if Path(helvetica).exists() else ImageFont.load_default()
+            draw = ImageDraw.Draw(image)
+            draw.text((80, 60), "Quarterly Review", font=big, fill="black")
+            draw.text((80, 170), "Revenue grew to 4280 this quarter across all regions.", font=small, fill="black")
+            draw.text((80, 220), "Churn fell and two new regions launched on schedule.", font=small, fill="black")
+            image.save(page / "source.png")
+            hints = indra_text_hints.page_hints(page)
+            self.assertEqual("indra", hints["backend"])
+            self.assertIn("4280", " ".join(line["text"] for line in hints["lines"]))
+            self.assertTrue(hints["layout_blocks"])
+            self.assertTrue(any("layout_block" in line for line in hints["lines"]))
+
+
 class ClaudeNativeBackendContractTest(unittest.TestCase):
     def test_prepare_records_claude_native_contract(self):
         with tempfile.TemporaryDirectory() as tmp:

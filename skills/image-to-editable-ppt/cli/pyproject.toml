@@ -16,6 +16,11 @@ dependencies = [
   "onnxruntime>=1.17.0",
 ]
 
+[project.optional-dependencies]
+# Opt-in text-hints backend. Model weights use a modified OpenRAIL-M license:
+# https://huggingface.co/datalab-to/indra-ocr/blob/main/LICENSE
+indra = ["indra-ocr>=1.1.0"]
+
 [project.scripts]
 editppt = "editppt.cli:main"
 

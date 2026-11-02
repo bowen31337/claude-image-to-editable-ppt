@@ -47,6 +47,36 @@ def paddle_token() -> str:
         return ""
 
 
+BACKENDS = ("auto", "paddleocr-vl", "rapidocr", "indra", "builtin-ink")
+
+
+def configured_backend() -> str:
+    """EDITPPT_TEXT_HINTS_BACKEND from the environment, then ~/.editppt/config.yaml; default auto."""
+    value = os.environ.get("EDITPPT_TEXT_HINTS_BACKEND", "").strip()
+    if not value:
+        try:
+            from runtime_env import config_path, read_config_file
+
+            value = str(read_config_file(config_path()).get("EDITPPT_TEXT_HINTS_BACKEND", "")).strip()
+        except Exception:
+            value = ""
+    return value if value in BACKENDS else "auto"
+
+
+def backend_chain(selected: str, has_token: bool) -> list[str]:
+    """Order to try. An explicit choice goes first, then the auto order as fallback.
+
+    auto: PaddleOCR-VL (only with a token) -> local RapidOCR -> geometry-only.
+    Indra is never used unless selected explicitly (model-weight license).
+    """
+    auto = (["paddleocr-vl"] if has_token else []) + ["rapidocr", "builtin-ink"]
+    if selected in ("auto", "", None):
+        return auto
+    if selected == "paddleocr-vl" and not has_token:
+        return auto
+    return [selected] + [b for b in auto if b != selected]
+
+
 def write_hints(page_dir: Path, hints: dict, overlay: bool) -> None:
     (page_dir / HINTS_JSON).write_text(json.dumps(hints, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     if overlay:
@@ -114,6 +144,7 @@ def main() -> int:
     parser.add_argument("run", help="Run directory or deck_manifest.json path.")
     parser.add_argument("--timeout", type=int, default=300, help="OCR job timeout in seconds.")
     parser.add_argument("--no-overlay", action="store_true", help="Skip the labeled overlay images.")
+    parser.add_argument("--backend", choices=BACKENDS, help="Override the configured text-hints backend for this run.")
     args = parser.parse_args()
 
     run_dir = run_dir_from_target(args.run)
@@ -126,58 +157,57 @@ def main() -> int:
         return 0
 
     token = paddle_token()
-    results: dict[Path, dict] = {}
-    backend = "builtin-ink"
+    chain = backend_chain(args.backend or configured_backend(), bool(token))
+    import indra_text_hints
     import rapid_text_hints
-    local_ocr = rapid_text_hints.available()
-    if not token and local_ocr:
+    local = {"rapidocr": rapid_text_hints, "indra": indra_text_hints}
+    chain = [b for b in chain if b not in local or local[b].available()]
+    print(f"text-hints: backend order {' -> '.join(chain)}", file=sys.stderr)
+    if chain[0] == "builtin-ink" and not token:
         print(
-            "text-hints: no PaddleOCR token configured; using local RapidOCR (reads text on-device, "
-            "no upload). A PaddleOCR-VL token is optional and only adds cloud layout analysis.",
-            file=sys.stderr,
-        )
-    elif not token:
-        print(
-            "text-hints: no PaddleOCR token configured; falling back to the built-in offline "
+            "text-hints: no OCR backend available; falling back to the built-in offline "
             "detector (geometry only — it measures where text is and how large, but cannot read "
-            "it). A free PaddleOCR-VL token adds recognized text content and cleaner block "
-            "boundaries, noticeably improving text fidelity in the final PPT. The free personal quota "
-            "is currently more than enough for this skill, so applying is risk-free with no extra "
-            "cost. ASK THE USER once "
-            "before reconstructing pages: configure a token now (apply at "
+            "it). ASK THE USER once before reconstructing pages: reinstall the CLI so local "
+            "RapidOCR is available, or configure a free PaddleOCR-VL token (apply at "
             "https://aistudio.baidu.com/account/accessToken, then `editppt config "
-            "--paddle-ocr-token <token>` and `editppt run hints <run>` to regenerate this run's "
-            "hints), or continue with the offline result. Respect their choice and do not ask again.",
+            "--paddle-ocr-token <token>` and `editppt run hints <run>`), or continue with the "
+            "offline result. Respect their choice and do not ask again.",
             file=sys.stderr,
         )
-    if token:
+
+    results: dict[Path, dict] = {}
+    if "paddleocr-vl" in chain:
         try:
             results = paddle_pages(run_dir, deck, page_dirs, token, args.timeout)
-            backend = "paddleocr-vl"
         except Exception as exc:
-            print(f"text-hints: PaddleOCR failed ({exc}); falling back to built-in detector", file=sys.stderr)
-            results = {}
+            print(f"text-hints: PaddleOCR failed ({exc}); trying the next backend", file=sys.stderr)
 
     written = 0
     used: set[str] = set()
     for page_dir in page_dirs:
         try:
-            hints = results.get(page_dir)
-            if hints is None and local_ocr:
-                try:
-                    hints = rapid_text_hints.page_hints(page_dir)
-                    if not hints["lines"]:
-                        # Nothing readable (e.g. stylised or synthetic ink): geometry beats nothing.
+            hints = None
+            for name in chain:
+                if name == "builtin-ink":
+                    hints = builtin_page(page_dir)
+                elif name == "paddleocr-vl":
+                    hints = results.get(page_dir)
+                else:
+                    try:
+                        hints = local[name].page_hints(page_dir)
+                    except Exception as exc:
+                        print(f"text-hints: {page_dir.name}: {name} failed ({exc}); trying the next backend", file=sys.stderr)
                         hints = None
-                except Exception as exc:
-                    print(f"text-hints: {page_dir.name}: RapidOCR failed ({exc}); using built-in detector", file=sys.stderr)
-                    hints = None
+                if hints and hints["lines"]:
+                    break
+                # Nothing readable (e.g. stylised or synthetic ink): try the next backend.
+                hints = None
             hints = hints or builtin_page(page_dir)
-            # Dense diagrams can defeat the OCR layout model entirely (the
+            # Dense diagrams can defeat an OCR layout model entirely (the
             # whole figure is classified as an image and only a headline
             # survives). When OCR found almost nothing but the offline
             # detector finds plenty, the geometric hints are more useful.
-            if hints.get("backend") in ("paddleocr-vl", "rapidocr") and len(hints["lines"]) <= 2:
+            if hints.get("backend") != "builtin-ink" and len(hints["lines"]) <= 2:
                 offline = builtin_page(page_dir)
                 if len(offline["lines"]) >= 6:
                     print(
@@ -191,7 +221,7 @@ def main() -> int:
             written += 1
         except Exception as exc:
             print(f"text-hints: {page_dir.name} failed ({exc}); worker can run `editppt page hints` itself", file=sys.stderr)
-    print(f"text-hints: wrote {written}/{len(page_dirs)} pages (backend={'+'.join(sorted(used)) or backend})")
+    print(f"text-hints: wrote {written}/{len(page_dirs)} pages (backend={'+'.join(sorted(used)) or 'none'})")
     return 0
 
 

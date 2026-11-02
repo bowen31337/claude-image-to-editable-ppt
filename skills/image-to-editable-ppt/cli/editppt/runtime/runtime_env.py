@@ -12,7 +12,7 @@ DEFAULT_CONFIG_HOME = "~/.editppt"
 DEFAULT_CODEX_AUTH_FILE = "~/.codex/auth.json"
 CODEX_PPT_RUNTIME_HOME = "~/.codex-ppt-skill"
 DEFAULT_IMAGE_MODEL = "gpt-image-2.5-sunburst"
-ENV_FIELDS = ("OPENAI_API_KEY", "OPENAI_BASE_URL", "IMAGE_TO_EDITABLE_PPT_IMAGE_MODEL", "PADDLE_OCR_TOKEN")
+ENV_FIELDS = ("OPENAI_API_KEY", "OPENAI_BASE_URL", "IMAGE_TO_EDITABLE_PPT_IMAGE_MODEL", "PADDLE_OCR_TOKEN", "EDITPPT_TEXT_HINTS_BACKEND")
 PADDLE_TOKEN_APPLY_URL = "https://aistudio.baidu.com/account/accessToken"
 CODEX_PPT_ENV_MAP = {
     "OPENAI_API_KEY": "OPENAI_API_KEY",
@@ -140,6 +140,11 @@ def config(args):
         values["IMAGE_TO_EDITABLE_PPT_IMAGE_MODEL"] = args.model.strip()
     if getattr(args, "paddle_ocr_token", None):
         values["PADDLE_OCR_TOKEN"] = args.paddle_ocr_token.strip()
+    if getattr(args, "text_hints_backend", None):
+        if args.text_hints_backend == "auto":
+            values.pop("EDITPPT_TEXT_HINTS_BACKEND", None)
+        else:
+            values["EDITPPT_TEXT_HINTS_BACKEND"] = args.text_hints_backend
     changed = sorted(key for key in ENV_FIELDS if before.get(key) != values.get(key))
     if changed or not config_path(home).exists():
         write_config_file(config_path(home), values)
@@ -219,7 +224,7 @@ def collect_status(check_api=False):
             "selection": "codex-oauth" if codex_ready else ("openai-compatible-api" if api_ready else "missing"),
         },
         "text_hints": {
-            "selection": "paddleocr-vl" if values.get("PADDLE_OCR_TOKEN") else ("rapidocr" if _rapidocr_available() else "builtin-ink"),
+            "selection": _hints_selection(values),
             "paddle_token": "set" if values.get("PADDLE_OCR_TOKEN") else "unset",
             "apply_url": PADDLE_TOKEN_APPLY_URL,
             "configure_command": "editppt config --paddle-ocr-token <token>",
@@ -306,6 +311,19 @@ def doctor(args):
     return 0 if status["ok"] else 1
 
 
+def _hints_selection(values):
+    chosen = values.get("EDITPPT_TEXT_HINTS_BACKEND") or os.environ.get("EDITPPT_TEXT_HINTS_BACKEND") or "auto"
+    if chosen == "indra":
+        try:
+            import indra_ocr  # noqa: F401
+            return "indra"
+        except ImportError:
+            return "indra (not installed: reinstall the CLI with the [indra] extra; falling back to auto)"
+    if chosen not in ("auto", "paddleocr-vl") :
+        return chosen
+    return "paddleocr-vl" if values.get("PADDLE_OCR_TOKEN") else ("rapidocr" if _rapidocr_available() else "builtin-ink")
+
+
 def _rapidocr_available():
     try:
         import onnxruntime  # noqa: F401
@@ -336,6 +354,7 @@ def main():
     cfg.add_argument("--clear-base-url", action="store_true", help="Remove OPENAI_BASE_URL from the config file.")
     cfg.add_argument("--model", help="Default image model for API fallback.")
     cfg.add_argument("--paddle-ocr-token", help=f"PaddleOCR-VL token for content-aware text hints. Apply at {PADDLE_TOKEN_APPLY_URL}.")
+    cfg.add_argument("--text-hints-backend", choices=["auto", "paddleocr-vl", "rapidocr", "indra", "builtin-ink"], help="Text-hints OCR backend (default auto: PaddleOCR-VL with a token, else local RapidOCR). indra is opt-in.")
     cfg.add_argument("--import-codex-ppt", action="store_true", help="Import compatible values from ~/.codex-ppt-skill/.env when present.")
     cfg.set_defaults(func=config)
     args = parser.parse_args()

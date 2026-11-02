@@ -109,7 +109,11 @@ Text hints are produced by the first available backend: PaddleOCR-VL (cloud, nee
 editppt config --paddle-ocr-token "<token>"
 ```
 
-`editppt doctor` reports the current text-hints backend (`paddleocr-vl`, `rapidocr`, or `builtin-ink`). When and how to ask the user about the token — including the application URL and the regenerate step — is defined in `SKILL.md` Phase 1.
+`editppt doctor` reports the current text-hints backend (`paddleocr-vl`, `rapidocr`, `indra`, or `builtin-ink`).
+
+Choosing a backend: `editppt config --text-hints-backend auto|paddleocr-vl|rapidocr|indra|builtin-ink` (or `EDITPPT_TEXT_HINTS_BACKEND`), and per run `editppt run hints <run> --backend <name>`. An explicit choice is tried first, and the auto order is the fallback if it is unavailable or reads nothing.
+
+`indra` ([datalab-to/indra](https://github.com/datalab-to/indra)) is opt-in. Install it with `uv tool install --force --editable "<skill-root>/cli[indra]"`. It is about 4× faster than RapidOCR and adds `layout_blocks` plus a per-line `layout_block` (id and label) that group paragraph lines on document-style text. On infographics it can merge unrelated labels into one block, and it sometimes reads small icons next to headings as characters. Its model weights use a modified OpenRAIL-M license that restricts some commercial use. When and how to ask the user about the token — including the application URL and the regenerate step — is defined in `SKILL.md` Phase 1.
 
 ## Run Commands
 

@@ -71,6 +71,8 @@ def cmd_config(args: argparse.Namespace) -> int:
         argv.append("--import-codex-ppt")
     if getattr(args, "paddle_ocr_token", None):
         argv.extend(["--paddle-ocr-token", args.paddle_ocr_token])
+    if getattr(args, "text_hints_backend", None):
+        argv.extend(["--text-hints-backend", args.text_hints_backend])
     return run_script("runtime_env.py", argv)
 
 
@@ -473,6 +475,7 @@ runtime. API keys are masked in command output.
     config.add_argument("--clear-base-url", action="store_true", help="Remove OPENAI_BASE_URL from the config file.")
     config.add_argument("--model", help="Default image model for API fallback.")
     config.add_argument("--paddle-ocr-token", metavar="TOKEN", help="PaddleOCR-VL token for content-aware text hints. Apply at https://aistudio.baidu.com/account/accessToken.")
+    config.add_argument("--text-hints-backend", choices=["auto", "paddleocr-vl", "rapidocr", "indra", "builtin-ink"], help="Text-hints OCR backend. Default auto: PaddleOCR-VL with a token, else local RapidOCR. indra is opt-in (pip extra [indra]; model-weight license applies).")
     config.add_argument("--import-codex-ppt", action="store_true", help="Import compatible values from ~/.codex-ppt-skill/.env when present.")
     config.set_defaults(func=cmd_config)
 
@@ -617,9 +620,10 @@ Use this when a parent Agent selects image_gen.imagegen or when forcing other ba
     run_hints.add_argument("run", metavar="RUN", help="Run directory or deck_manifest.json path.")
     run_hints.add_argument("--timeout", type=int, default=300, help="OCR job timeout in seconds.")
     run_hints.add_argument("--no-overlay", action="store_true", help="Skip the labeled overlay images.")
+    run_hints.add_argument("--backend", choices=["auto", "paddleocr-vl", "rapidocr", "indra", "builtin-ink"], help="Override the configured text-hints backend for this regeneration.")
     run_hints.set_defaults(func=lambda args: run_script(
         "deck_text_hints.py",
-        [args.run, "--timeout", str(args.timeout)] + (["--no-overlay"] if args.no_overlay else []),
+        [args.run, "--timeout", str(args.timeout)] + (["--no-overlay"] if args.no_overlay else []) + (["--backend", args.backend] if args.backend else []),
     ))
 
     finalize = run_sub.add_parser(
