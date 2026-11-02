@@ -1,6 +1,6 @@
 [project]
 name = "image-to-editable-ppt-cli"
-version = "0.1.0"
+version = "1.0.0"
 description = "Self-contained editppt CLI for the image-to-editable-ppt skill."
 requires-python = ">=3.10"
 dependencies = [
