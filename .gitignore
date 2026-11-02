@@ -62,3 +62,8 @@ __pycache__/
 *.egg-info/
 .DS_Store
 *-workspace/
+
+# README showcase images are curated, not generated output
+!docs/showcase/
+!docs/showcase/*.png
+!docs/showcase/*.jpg
